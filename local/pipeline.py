@@ -16,6 +16,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+from local.gold.corpus_manifest import build_corpus_manifest
+from local.gold.encounter_summary import SILVER_SOURCES, TABLE_NAME, build_encounter_summary
 from local.ingest.bronze_landing import DEFAULT_BRONZE, cohort_files, cohort_labels
 from local.platform.base import LakehousePlatform
 from local.platform.factory import get_platform
@@ -102,15 +104,67 @@ def run_pipeline(
     return summary
 
 
+def build_gold(
+    platform: LakehousePlatform | None = None,
+    created_ts: datetime | None = None,
+) -> dict[str, int]:
+    """Build ``gold.encounter_summary`` and its corpus manifest from Silver.
+
+    Reads every Silver source table via the platform, denormalizes to the encounter
+    corpus (spec §5.4), writes the Gold Delta table, and persists the lineage manifest
+    (spec §5.7). Platform-agnostic: talks only to the ``LakehousePlatform`` and the pure
+    Gold transforms.
+
+    Args:
+        platform: Target platform; defaults to the factory's configured platform.
+        created_ts: Build timestamp stamped on all rows; defaults to now (UTC).
+
+    Returns:
+        ``{"encounter_summary": row_count}`` merged with the manifest corpus stats.
+    """
+    platform = platform or get_platform()
+    created_ts = created_ts or datetime.now(UTC)
+
+    silver = {name: platform.read_silver(name) for name in SILVER_SOURCES}
+    counts = {name: table.num_rows for name, table in silver.items()}
+    versions = {name: platform.table_version("silver", name) for name in SILVER_SOURCES}
+
+    gold = build_encounter_summary(silver, created_ts=created_ts, silver_versions=versions)
+    platform.write_gold(TABLE_NAME, gold)
+
+    manifest = build_corpus_manifest(
+        gold,
+        silver_counts=counts,
+        created_ts=created_ts,
+        platform_name=platform.name,
+        silver_versions=versions,
+    )
+    platform.write_gold_manifest(manifest)
+    platform.log_metric(TABLE_NAME, "row_count", gold.num_rows)
+    logger.info("Gold build complete: %d encounter summaries", gold.num_rows)
+    return {"encounter_summary": gold.num_rows, **manifest["corpus_stats"]}
+
+
 if __name__ == "__main__":
     import argparse
     import json
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description="Run Bronze -> Silver pipeline locally")
+    ap = argparse.ArgumentParser(description="Run the local Bronze -> Silver -> Gold pipeline")
     ap.add_argument("--bronze-root", type=Path, default=DEFAULT_BRONZE)
     ap.add_argument("--cohort", action="append", dest="cohorts", help="Limit to cohort(s)")
+    ap.add_argument("--with-gold", action="store_true", help="Build Gold after Silver")
+    ap.add_argument(
+        "--gold-only",
+        action="store_true",
+        help="Build Gold from existing Silver (skip Bronze -> Silver)",
+    )
     args = ap.parse_args()
 
-    result = run_pipeline(bronze_root=args.bronze_root, cohorts=args.cohorts)
+    if args.gold_only:
+        result = build_gold()
+    else:
+        result = run_pipeline(bronze_root=args.bronze_root, cohorts=args.cohorts)
+        if args.with_gold:
+            result["gold"] = build_gold()
     print(json.dumps(result, indent=2))

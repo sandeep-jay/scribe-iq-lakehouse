@@ -1,4 +1,4 @@
-# HANDOFF — Session 2 (+ post-Session-2 hardening & docs)
+# HANDOFF — Session 3 (Gold layer + corpus contract)
 **Date:** 2026-05-27
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
@@ -6,103 +6,94 @@
 ---
 
 ## Session summary
-Built the full local Bronze→Silver pipeline and ran it on the **entire** Synthea Coherent
-FHIR dataset (1,280 files / 4.6 GB): all 10 Silver Delta tables materialized in 2m30s on
-the M1 Max with CDC enabled and every validation passing (`LocalLitePlatform` + 7 silver
-transforms + validation + ingest/streaming-sim). Then hardened and documented it:
-PHI-safe log redaction (ADR-010), split Claude Code settings (tracked vs gitignored local),
-and a **generated-first** documentation system (ADR-011) — ARCHITECTURE, generated
-DATA_DICTIONARY, BENCHMARKS, plus a doc-as-test and read-only pre-commit gate so docs
-can't drift. 86 tests passing; tree clean. Gold layer (Session 3) is the next build.
+Built the Gold layer end-to-end. `local/gold/encounter_summary.py` denormalizes all 10
+Silver tables into `gold.encounter_summary` (one row per encounter) using Polars as a pure
+in-process join engine, assembling against an explicit `GOLD_SCHEMA` with nested struct/
+array types; `local/gold/corpus_manifest.py` writes a lineage + coverage manifest. Ran on
+the full dataset: **143,946 encounter summaries from 1,278 patients in ~5s**, nested Delta
+types + CDC verified. Shipped the corpus contract three ways — a generated JSON Schema
+(`schemas/gold_encounter_summary.json`), a human doc (`docs/CORPUS_CONTRACT.md`), and a
+17-test conformance suite — all kept in sync by ADR-012's generated-first pattern. 103 tests
+passing; ruff/black clean. Fabric notebooks (Session 4) are next.
 
 ---
 
 ## Current state
 
-**Working:**
-- `.venv` with full `[local,dev]` extras (polars 1.41, deltalake 1.6, duckdb 1.5, pydicom 3)
-- `local/ingest/download.py` — parallel S3 sync + round-robin cohort partition + manifest
-- `local/platform/local_lite.py` — `LocalLitePlatform`: delta-rs write/read, CDC, MERGE upsert
-- `local/transforms/` — `schema_utils.py`, 7 `silver_*` modules, `registry.py` (10 tables)
-- `local/validation/` — `schema_registry.py` + `validate.py` → `silver.ingest_log`
-- `local/ingest/bronze_landing.py` + `streaming_sim.py` (cohort replay + watchdog)
-- `local/pipeline.py` — per-cohort micro-batch orchestration (`python -m local.pipeline`)
-- 86 tests passing; ruff clean; black formatted
-- ADR-008 (dict parsing) + ADR-009 (local Silver) + ADR-010 (PHI-safe logging) +
-  ADR-011 (generated-first docs)
-- `local/redaction.py` — `redact()` for PHI-safe logs; applied to skip-warnings (ADR-010)
-- **Full dataset processed → Silver Delta tables on disk under `data/silver/` (gitignored)**
+**Working (new this session):**
+- `local/gold/encounter_summary.py` — `build_encounter_summary(silver, *, created_ts,
+  silver_versions=None) -> pa.Table`. Polars joins/aggs; explicit `GOLD_SCHEMA` (22 cols).
+  Deterministic `summary_id` (UUIDv5 of encounter_id); BP parsed from `components_json`;
+  anniversary-based `patient_age`. Defines `CONTRACT_VERSION="1.0.0"`, `REQUIRED_FIELDS`,
+  `OPTIONAL_FIELDS`, `SILVER_SOURCES`.
+- `local/gold/corpus_manifest.py` — `build_corpus_manifest(...)` → JSON dict (lineage + stats).
+- `local/pipeline.py` — `build_gold()` + CLI `--with-gold` / `--gold-only`.
+- Platform: `table_version(layer, table)` (delta-rs `version()` on local_lite; `None` on base),
+  `write_gold_manifest()`, plus `read_gold()` on local_lite.
+- `scripts/gen_corpus_schema.py` → `schemas/gold_encounter_summary.json` (`--check` for CI).
+- `docs/CORPUS_CONTRACT.md`, ADR-012, `tests/test_gold_encounter_summary.py` (17 tests).
+- **Full dataset processed → `gold.encounter_summary` Delta table + `gold/_metadata/
+  corpus_manifest.json` on disk (gitignored).**
 
-**Claude Code config convention (new):**
-- `.claude/settings.json` is tracked (curated allow globs + deny + hooks, portable
-  `$CLAUDE_PROJECT_DIR` hook path). Personal/auto-approved permissions now live in
-  gitignored `.claude/settings.local.json` — it will NOT show up in `git status`.
+**Carried from Session 2 (all still working):**
+- `.venv` `[local,dev]` (now + `jsonschema`); LocalLitePlatform; 7 Silver transforms +
+  registry + validation; Bronze→Silver pipeline; ADR-008..011; PHI-safe redaction.
 
-**Silver row counts (full run, all validations passed):**
+**Gold corpus coverage (full run):**
 ```
-patient             1,278     encounter         143,946
-condition          15,956     observation       669,898
-medication_request 209,401    procedure          56,092
-soap_note         143,946     ecg_metadata            0
-imaging_study       3,752     genomic_report        419
+encounters         143,946     with_soap_note   143,946 (100%)
+distinct_patients    1,278     with_labs         26,059
+with_vitals         19,830     with_imaging       3,752
+with_genomics          419     with_ecg               0
+avg conditions/enc    0.08     avg meds/enc        0.05
 ```
 
 **In progress:**
-- Nothing — Session 2 complete, ready for Session 3 (Gold layer)
+- Nothing — Session 3 complete, ready for Session 4 (Fabric notebooks).
 
 **Blocked:**
-- Fabric workspace + S3 shortcut (manual; needed for Session 4, ~13 days of trial left)
+- Fabric workspace + S3 shortcut (manual; needed for Session 4, ~13 days of trial left).
 
-**Discoveries / caveats (carry into Session 3+):**
-- The FHIR prefix has 2 non-patient reference files (`organizations.json`,
-  `practitioners.json`) → 1,278 real patients out of 1,280 files. They parse to empty
-  patient/encounter rows, harmlessly.
-- `ecg_metadata = 0`: Coherent has NO ECG DiagnosticReports in FHIR (ECG is Binary
-  waveform data, roadmap Phase 3). The table is created empty; min_rows=0 in validation.
-- `genomic_report = 419`: genomic DiagnosticReports DO exist in the FHIR (more than the
-  single inspected bundle implied). `data_limitation` 100% populated; 0 pathogenic (synthetic).
-- `soap_note == encounter` count (143,946): ~one SOAP note per encounter. Notes use
-  Markdown headers, no Objective section — validation checks S/A/P only (ADR-005/009).
-- Observation BP components stored as `components_json` string (ADR-009) — Gold must parse it.
-- delta-rs MERGE at full scale is fine (2m30s end-to-end); no perf concerns at this size.
+**Discoveries / caveats (carry forward):**
+- **Encounter-grain conditions/meds are sparse** (avg 0.08 / 0.05): Synthea records a
+  condition/med once, joined to that encounter only — not a running problem list. Documented
+  as a v1.0 limitation (ADR-012 / CORPUS_CONTRACT). SOAP note (100% coverage) is the primary
+  generation anchor. Production path: problem-list-as-of-date join (a MINOR contract bump).
+- `has_ecg` always false (no ECG DiagnosticReports in Coherent FHIR); fields kept for fwd-compat.
+- Nested types (struct/list) round-trip through delta-rs cleanly; full Gold build ~5s.
+- `recent_vitals` / `imaging` are ALWAYS-present structs (members null when absent) so
+  consumers don't null-guard the struct itself — check `imaging.has_imaging` / vital members.
 
 ---
 
 ## Test status
 ```
-86 passed (venv: .venv/bin/python -m pytest)
-  fhir_parser, silver_soap_notes, platform_factory      (Session 1)
-  schema_utils, silver_transforms, local_lite, validate (Session 2)
-  redaction                                             (post-S2 hardening)
-  docs_generated                                        (generated-first docs)
-ruff: All checks passed   |   black: formatted
+103 passed (venv: .venv/bin/python -m pytest)
+  + test_gold_encounter_summary (17): schema/grain, age, vitals(BP from components),
+    labs, null-safe sparse encounter, idempotent summary_id, manifest stats,
+    contract field-list coverage, JSON Schema currency, per-row JSON Schema validation
+ruff: All checks passed   |   black: 43 files unchanged
+doc-sync --check: DATA_DICTIONARY + gold_encounter_summary.json both up to date
 ```
 
 ---
 
 ## Next session — start here
 
-**First task:** Gold layer — `local/gold/encounter_summary.py` (denormalize Silver →
-`gold.encounter_summary` per spec §5.4 corpus schema) and `local/gold/corpus_manifest.py`
-(lineage). Then `schemas/` JSON Schemas, `docs/CORPUS_CONTRACT.md`, and
-`tests/test_gold_encounter_summary.py`. Read Silver via `platform.read_silver(...)`.
-**Read first:** spec §5.4 (gold.encounter_summary cols + imaging struct), §5.7 (corpus contract)
-**Watch out:** age-at-encounter calc (healthcare skill), parse `components_json` for vitals,
-null-safe joins (most encounters have no imaging/genomic).
+**First task (Session 4 — Fabric execution):** create the Fabric workspace + lakehouse and
+the S3 shortcut to `s3://synthea-open-data/coherent/`, then build the notebook sequence
+following the 8-cell template (`.claude/rules/notebooks.md`): `00_setup`, `01_bronze_ingest`,
+the `05_silver_soap_notes` demo centerpiece (MUST display a decoded SOAP note), and
+`09_gold_encounter_summary`. Notebooks import the **same** pure transforms from
+`local/transforms/` and `local/gold/` — zero duplicate logic — with
+`LAKEHOUSE_PLATFORM=fabric`. **Capture screenshots as you go** (trial ~13 days; spec §15.2).
+**Read first:** spec §6 (notebook sequence), `.claude/rules/notebooks.md`, ADR-001 (Fabric-first).
+**Watch out:** `FabricPlatform` is registered in the factory but NOT implemented — implement
+it (Spark read/write + CDC + `table_version`/`write_gold_manifest`) before the notebooks run.
 
-**Documentation — "generated-first" (ADR-011, [[doc-strategy-generated-first]]):**
-DONE (this turn):
-- `docs/ARCHITECTURE.md` — as-built + Mermaid + done-vs-planned status table.
-- `scripts/gen_data_dictionary.py` → `docs/DATA_DICTIONARY.md` — generated from the
-  registry; `tests/test_docs_generated.py` fails if stale (`--check` for CI).
-- `docs/BENCHMARKS.md` — real Session 2 metrics + engine matrix.
-STILL TO DO with the Gold layer:
-- `docs/CORPUS_CONTRACT.md` **+ contract test** asserting the Gold schema matches the
-  contract (deferred — only meaningful once `gold.encounter_summary` exists).
-Deferred to Session 5 (synthesis): REVIEWER_GUIDE, full README, PRODUCTION_NOTES,
-STREAMING_DESIGN, MkDocs + mkdocstrings, screenshots.
-Guardrails in force: generate code-mirroring docs; ADRs immutable (supersede, don't edit);
-diagrams-as-code (Mermaid); verify contracts with tests.
+**Alternative if Fabric is blocked:** Session 5 synthesis docs (REVIEWER_GUIDE, full README,
+PRODUCTION_NOTES, STREAMING_DESIGN, MkDocs + mkdocstrings) — all deferred and now unblocked
+since Gold exists.
 
 ---
 
@@ -110,22 +101,24 @@ diagrams-as-code (Mermaid); verify contracts with tests.
 
 | Decision | Options | Recommendation | Status |
 |----------|---------|----------------|--------|
-| Gold engine | local (Polars/DuckDB join) vs Fabric | Local now; Fabric mirrors later | Lean local for Session 3 |
-| Gold join key | encounter-level vs patient-level grain | encounter_summary = one row per encounter | Per spec §5.4 |
-| Doc strategy | generated-first vs hand-written vs all-in-S5 | Generated-first (gen DATA_DICTIONARY, contract test, BENCHMARKS) | DECIDED 2026-05-27 |
-| ECG/genomic in Gold | include sparse/empty flags | has_ecg=false always; has_genomics where present | Decide Session 3 |
+| Conditions/meds grain | encounter-recorded vs patient problem-list-as-of-date | Encounter-recorded for v1.0; problem-list = future MINOR | DECIDED (ADR-012); revisit if corpus quality needs it |
+| Fabric platform impl | Spark in FabricPlatform vs reuse local transforms only | Implement FabricPlatform I/O; transforms unchanged | Session 4 |
+| Gold on Fabric | rerun build_gold via Spark-backed platform vs Spark-native SQL | Reuse pure build_gold (portable) | Lean reuse |
+| Contract version bump trigger | when to go 1.1 / 2.0 | semver policy in CORPUS_CONTRACT (MINOR=add optional, MAJOR=break) | DECIDED |
 
 ---
 
 ## Key state
 ```
 LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform implemented
-Storage root: data/ (gitignored) — bronze/fhir/cohort=A|B|C + silver/<10 tables> + ingest_log
-Bronze: 1,280 raw JSON bundles, 4.6 GB, manifest at data/bronze/_metadata/manifest.json
-Silver: 10 Delta tables + ingest_log, CDC enabled, all validations passed
-Gold: none yet (Session 3)
-Docs: ARCHITECTURE.md, DATA_DICTIONARY.md (generated), BENCHMARKS.md live; CORPUS_CONTRACT pending Gold
-Tests: 86 passing
+Storage root: data/ (gitignored) — bronze/ + silver/<10 tables>+ingest_log + gold/encounter_summary + gold/_metadata
+Bronze: 1,280 raw JSON bundles, 4.6 GB
+Silver: 10 Delta tables + ingest_log, CDC, all validations passed
+Gold: encounter_summary (143,946 rows, CDC) + corpus_manifest.json
+Docs: ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT live;
+      schemas/gold_encounter_summary.json (gen)
+Contract: v1.0.0 — scribe-iq + clinical-bert-pipeline pin against this
+Tests: 103 passing
 Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
@@ -133,38 +126,24 @@ M5 Max: arriving ~June 2, 2026
 ---
 
 ## Files changed this session
-- pyproject/requirements already present; `.venv/` created (gitignored)
-- local/ingest/{download,bronze_landing,streaming_sim}.py — created
-- local/platform/local_lite.py — created
-- local/transforms/{schema_utils,registry,silver_patient,silver_encounter,silver_clinical,
-  silver_soap_notes,silver_ecg,silver_imaging,silver_genomics}.py — created
-- local/validation/{schema_registry,validate}.py — created
-- local/pipeline.py — created
-- tests/{test_schema_utils,test_silver_transforms,test_local_lite,test_validate}.py — created
-- tests/test_platform_factory.py — updated (local_lite now implemented)
-- docs/adr/009-local-silver-materialization.md — created; docs/adr/README.md — index updated
-- CHANGELOG.md — Session 2 section added
-
-## ADRs written this session
-- ADR-009: Local Silver materialization — delta-rs, type coercion, component JSON
-- ADR-010: PHI-safe logging via redaction
-- ADR-011: Generated-first documentation
-
-## Post-Session-2 commits (this session)
-- `4cfeed9` fix(platform): redact patient identifiers from logs
-- `a66b362` chore(config): split Claude Code settings into shared + local
-- `f0e339e` docs: record PHI-safe logging + settings split across project docs
-- `94cbffc` docs: generated-first doc set (ARCHITECTURE, DATA_DICTIONARY, BENCHMARKS)
-- `aee3dbd` chore(docs): wire doc-sync into session-end + read-only pre-commit gate
-- (uncommitted, this session-end) HANDOFF + CHANGELOG refresh
+- local/gold/{encounter_summary,corpus_manifest}.py — created
+- local/pipeline.py — build_gold() + CLI flags
+- local/platform/base.py — table_version() + write_gold_manifest()
+- local/platform/local_lite.py — read_gold(), table_version(), write_gold_manifest()
+- scripts/gen_corpus_schema.py — created; schemas/gold_encounter_summary.json — generated
+- docs/CORPUS_CONTRACT.md — created; docs/adr/012-gold-encounter-summary.md — created
+- docs/adr/README.md, docs/ARCHITECTURE.md, docs/BENCHMARKS.md — updated
+- tests/test_gold_encounter_summary.py — created (17 tests)
+- pyproject.toml — jsonschema dev dep
+- .pre-commit-config.yaml — corpus-schema-current hook
+- .claude/commands/session-end.md — corpus schema in doc-sync step
+- CHANGELOG.md — Session 3 section
 
 ## ADRs (running list)
 - ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
-  ADR-011 generated-first docs
+  ADR-011 generated-first docs · ADR-012 Gold encounter_summary (engine/grain/lineage)
 
 ## Note on settings.json churn
-The harness keeps appending auto-approved Bash permissions to the **tracked**
-`.claude/settings.json` each session; we relocate them into gitignored
-`.claude/settings.local.json` and `git restore` the tracked file. Recurs every session.
-Permanent fix offered but not taken: untrack settings.json (`git rm --cached` + gitignore,
-keep `settings.example.json` as the shared template).
+The harness may append auto-approved Bash permissions to the **tracked**
+`.claude/settings.json`; relocate them into gitignored `.claude/settings.local.json` and
+`git restore` the tracked file. Recurs each session.

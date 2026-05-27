@@ -61,3 +61,9 @@ repos:
         language: system
         pass_filenames: false
         files: '^(local/transforms/registry\.py|local/validation/(schema_registry|validate)\.py|scripts/gen_data_dictionary\.py|docs/DATA_DICTIONARY\.md)$'
+      - id: corpus-schema-current
+        name: corpus JSON Schema is current (generated)
+        entry: python scripts/gen_corpus_schema.py --check
+        language: system
+        pass_filenames: false
+        files: '^(local/gold/encounter_summary\.py|scripts/gen_corpus_schema\.py|schemas/gold_encounter_summary\.json)$'

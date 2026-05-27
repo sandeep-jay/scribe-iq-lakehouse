@@ -13,3 +13,4 @@
 | 009 | Local Silver materialization — delta-rs, type coercion, component JSON | Accepted | 2026-05-27 |
 | 010 | PHI-safe logging via redaction | Accepted | 2026-05-27 |
 | 011 | Generated-first documentation | Accepted | 2026-05-27 |
+| 012 | Gold encounter_summary — engine, grain, lineage | Accepted | 2026-05-27 |

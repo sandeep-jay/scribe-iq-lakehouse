@@ -14,8 +14,10 @@ We are ending this session. Before stopping, complete all of the following in or
 
 3. **Sync the docs** (do this before pytest so the doc-as-test passes):
    - **Regenerate generated docs**: `python scripts/gen_data_dictionary.py` (writes ONLY
-     docs/DATA_DICTIONARY.md — never edit that file by hand; durable per-column prose goes
-     in the generator's `_COLUMN_NOTES`). The doc-as-test will fail if you skip this.
+     docs/DATA_DICTIONARY.md) and `python scripts/gen_corpus_schema.py` (writes ONLY
+     schemas/gold_encounter_summary.json from GOLD_SCHEMA — ADR-012). Never edit either by
+     hand; durable per-column prose goes in the generator's `_COLUMN_NOTES`. The doc-as-test
+     (data dictionary) and the corpus contract test will fail if you skip these.
    - **ARCHITECTURE.md** — update if module/layer structure changed (keep the Mermaid +
      status table current). Hand-maintained; never auto-overwritten.
    - **BENCHMARKS.md** — update if scale/perf/row counts changed.

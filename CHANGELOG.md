@@ -5,6 +5,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 3 — Gold layer + corpus contract (ADR-012)
+#### Added
+- `local/gold/encounter_summary.py`: pure transform denormalizing all 10 Silver tables →
+  `gold.encounter_summary` (one row per encounter). Polars join/aggregation engine; output
+  assembled against an explicit `GOLD_SCHEMA` (nested struct vitals/imaging/versions + array
+  conditions/meds/labs). Deterministic `summary_id` (UUIDv5 of encounter_id); BP parsed from
+  Silver `components_json`; anniversary-based age-at-encounter. Defines the corpus contract
+  (`CONTRACT_VERSION`, `REQUIRED_FIELDS`, `OPTIONAL_FIELDS`).
+- `local/gold/corpus_manifest.py`: lineage manifest — contract version, per-Silver row
+  counts + Delta versions, platform, and corpus coverage stats.
+- `scripts/gen_corpus_schema.py` + `schemas/gold_encounter_summary.json`: machine-readable
+  JSON Schema (Draft 2020-12) generated from `GOLD_SCHEMA` (`--check` for CI); never hand-edited.
+- `docs/CORPUS_CONTRACT.md`: human contract — required/optional guarantees, real corpus
+  coverage, honest limitations (encounter-grain sparsity, ECG=0, synthetic genomics), semver
+  versioning policy.
+- `tests/test_gold_encounter_summary.py`: 17 tests — schema/grain, age, vitals (BP from
+  components), labs, null-safe optional context, idempotent summary_id, manifest stats,
+  contract field-list coverage, JSON Schema currency, and per-row validation against the
+  published JSON Schema (`jsonschema`). 103 tests total.
+- ADR-012: Gold engine (Polars pure transform), grain, `silver_versions` lineage, contract integrity.
+#### Changed
+- `local/pipeline.py`: added `build_gold()` + CLI flags `--with-gold` / `--gold-only`.
+- Platform interface: `table_version(layer, table)` (delta-rs `version()` on `local_lite`,
+  `None` default on base) and `write_gold_manifest()`; `local_lite` also gained `read_gold()`.
+- `pyproject.toml`: `jsonschema>=4.0` added to `[dev]` for corpus-contract validation.
+#### Enforcement
+- `.pre-commit-config.yaml`: read-only `corpus-schema-current` hook
+  (`gen_corpus_schema.py --check`); `/session-end` doc-sync now regenerates the corpus schema.
+#### Full-run result
+- 1,278 patients → **143,946** `gold.encounter_summary` rows in **~5s** (M1 Max), nested
+  Delta types + CDC verified; manifest written to `gold/_metadata/corpus_manifest.json`.
+
 ### Documentation — generated-first (ADR-011)
 #### Added
 - `scripts/gen_data_dictionary.py`: renders `docs/DATA_DICTIONARY.md` from the registry

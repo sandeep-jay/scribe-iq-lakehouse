@@ -1,0 +1,286 @@
+{
+  "$id": "https://scribe-iq.dev/schemas/gold_encounter_summary.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Corpus contract for the denormalized encounter summary that feeds the Ollama generation pipeline, scribe-iq (RAG) and clinical-bert-pipeline (NLP). One object per clinical encounter. See docs/CORPUS_CONTRACT.md.",
+  "properties": {
+    "active_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "active_medications": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "created_timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "ecg_finding": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ecg_rhythm": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "encounter_date": {
+      "format": "date",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "encounter_id": {
+      "type": "string"
+    },
+    "encounter_type": {
+      "type": "string"
+    },
+    "genomic_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "has_ecg": {
+      "type": "boolean"
+    },
+    "has_genomics": {
+      "type": "boolean"
+    },
+    "imaging": {
+      "additionalProperties": false,
+      "properties": {
+        "body_site_display": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dicom_binary_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "has_imaging": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "modality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "study_date": {
+          "format": "date",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "study_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "patient_age": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "patient_gender": {
+      "type": "string"
+    },
+    "patient_id": {
+      "type": "string"
+    },
+    "procedures": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "recent_labs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "recent_vitals": {
+      "additionalProperties": false,
+      "properties": {
+        "bp_diastolic": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "bp_systolic": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "heart_rate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "o2_saturation": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "silver_versions": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ecg_metadata": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "encounter": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "genomic_report": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "imaging_study": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "medication_request": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "observation": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "patient": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "procedure": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "soap_note": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "soap_note_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "soap_note_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary_id",
+    "patient_id",
+    "encounter_id",
+    "patient_age",
+    "patient_gender",
+    "encounter_type",
+    "encounter_date",
+    "active_conditions",
+    "active_medications"
+  ],
+  "title": "gold.encounter_summary",
+  "type": "object",
+  "x-contract-version": "1.0.0"
+}

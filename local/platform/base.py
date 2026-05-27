@@ -126,6 +126,32 @@ class LakehousePlatform(ABC):
             Polars-based ``LocalLitePlatform``.
         """
 
+    def table_version(self, layer: str, table: str) -> int | None:
+        """Return the current Delta version of a table, or ``None`` if unavailable.
+
+        Delta-backed platforms (Fabric, local-lite) override this to expose the
+        version that Gold records in its ``silver_versions`` lineage struct. Engines
+        without table versioning, or callers reading a non-existent table, get ``None``.
+
+        Args:
+            layer: One of ``"bronze"``, ``"silver"``, ``"gold"``.
+            table: Logical table name (without layer prefix).
+        """
+        self._validate_layer(layer)
+        return None
+
+    def write_gold_manifest(self, manifest: dict) -> None:
+        """Persist the Gold corpus manifest (lineage JSON) alongside the Gold tables.
+
+        Args:
+            manifest: JSON-serializable manifest produced by
+                :func:`local.gold.corpus_manifest.build_corpus_manifest`.
+
+        Raises:
+            NotImplementedError: If the platform has no manifest sink configured.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement write_gold_manifest")
+
     def _validate_layer(self, layer: str) -> None:
         """Guard helper for implementations: raise on an unknown medallion layer.
 

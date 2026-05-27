@@ -54,6 +54,34 @@ pipeline or dataset materially changes.
 | ecg_metadata | 0 | ECG is Binary waveform, not in FHIR — roadmap Phase 3 |
 | ingest_log | 11 | one validation row per Silver table per run |
 
+## Gold (Silver → `gold.encounter_summary`) — full dataset
+
+Polars in-process denormalization of all 10 Silver tables → one row per encounter
+(ADR-012). Reads Silver via the platform, builds with the pure Gold transform, writes one
+Delta table (overwrite + CDC) plus the corpus manifest.
+
+| Metric | Value |
+|--------|-------|
+| Wall clock | **~5.3s** (4.4s user · 1.2s sys) |
+| Output rows | 143,946 (one per encounter) |
+| Output columns | 22 (incl. nested struct vitals/imaging/versions + array conditions/meds/labs) |
+| Nested types in Delta | round-trip verified; CDC enabled |
+
+### Corpus coverage
+
+| Metric | Value | Note |
+|--------|------:|------|
+| Encounters | 143,946 | |
+| Distinct patients | 1,278 | |
+| With SOAP note | 143,946 (100%) | primary generation anchor |
+| With labs | 26,059 | |
+| With vitals | 19,830 | BP parsed from `components_json` |
+| With imaging | 3,752 | |
+| With genomics | 419 | synthetic (ADR-007) |
+| With ECG | 0 | no ECG in Coherent FHIR |
+| Avg conditions / encounter | 0.08 | encounter-grain; sparse by design (ADR-012 / CORPUS_CONTRACT) |
+| Avg medications / encounter | 0.05 | encounter-grain; see limitation note |
+
 ## Engine comparison (target matrix)
 
 Same transforms, different platforms (one env var). Only `local_lite` is measured today.
@@ -61,6 +89,7 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 | Capability | local_lite | local_spark | Fabric | Databricks | AWS | GCP |
 |------------|-----------|-------------|--------|------------|-----|-----|
 | Bronze→Silver (full) | ✅ 2m30s | — | 🔜 S4 | roadmap | roadmap | roadmap |
+| Silver→Gold (full) | ✅ ~5s | — | 🔜 S4 | roadmap | roadmap | roadmap |
 | CDC | ✅ | — | 🔜 | roadmap | roadmap | roadmap |
 | Streaming | sim only | — | 🔜 Auto Loader | roadmap | roadmap | roadmap |
 | Cost (1.3k pts) | $0 | $0 | trial | — | — | — |
@@ -70,7 +99,8 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 ```bash
 pip install -e ".[local,dev]"                 # or: .venv
 python -m local.ingest.download --bronze-root data/bronze   # ~4.6 GiB, network-bound
-python -m local.pipeline --bronze-root data/bronze          # → data/silver/*, ~2m30s
+python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m30s) + gold/* (~5s)
+python -m local.pipeline --gold-only                        # rebuild Gold from existing Silver
 ```
 
 ## Methodology & caveats

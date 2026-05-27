@@ -99,6 +99,23 @@ class LocalLitePlatform(LakehousePlatform):
         """Write a PyArrow table to a Gold Delta table (overwrite semantics)."""
         self._write_delta(self.storage_path("gold", table), data, "overwrite", table)
 
+    def read_gold(self, table: str) -> pa.Table:
+        """Read a Gold Delta table as a PyArrow table."""
+        return DeltaTable(self.storage_path("gold", table)).to_pyarrow_table()
+
+    def table_version(self, layer: str, table: str) -> int | None:
+        """Return the Delta version of a table, or ``None`` if it does not exist yet."""
+        path = self.storage_path(layer, table)
+        if not DeltaTable.is_deltatable(path):
+            return None
+        return DeltaTable(path).version()
+
+    def write_gold_manifest(self, manifest: dict) -> None:
+        """Write the corpus manifest to ``<root>/gold/_metadata/corpus_manifest.json``."""
+        meta_dir = Path(self.storage_path("gold", "_metadata"))
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        (meta_dir / "corpus_manifest.json").write_text(json.dumps(manifest, indent=2))
+
     def _write_delta(self, path: str, data: pa.Table, mode: str, table: str) -> None:
         """Create-or-upsert a Delta table at ``path`` honoring the requested mode."""
         exists = DeltaTable.is_deltatable(path)

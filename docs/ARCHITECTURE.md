@@ -10,8 +10,8 @@ structure changes — it tracks reality, not the plan.
 A medallion healthcare lakehouse on Synthea Coherent (synthetic FHIR R4). Engine-agnostic
 **pure transforms** return Apache Arrow tables; a **platform abstraction** handles all I/O
 so the same code runs locally (Polars + delta-rs) or on Microsoft Fabric. Today the
-**Bronze → Silver** path is fully built and runs end-to-end on the full 1,278-patient
-dataset locally; **Gold** and **Fabric execution** are next.
+**Bronze → Silver → Gold** path is fully built and runs end-to-end on the full
+1,278-patient dataset locally (143,946 encounter summaries); **Fabric execution** is next.
 
 ```mermaid
 flowchart TD
@@ -25,19 +25,18 @@ flowchart TD
         ST["10 tables: patient · encounter · condition · observation<br/>medication_request · procedure · soap_note · ecg_metadata<br/>imaging_study · genomic_report  (+ ingest_log audit)"]
     end
 
-    subgraph GOLD["GOLD — denormalized corpus  🔜 Session 3"]
-        G["gold.encounter_summary · gold.corpus_manifest"]
+    subgraph GOLD["GOLD — denormalized corpus ✅ built"]
+        G["gold.encounter_summary (143,946 rows, 1/encounter)<br/>+ _metadata/corpus_manifest.json"]
     end
 
     S3 -->|"download.py · aws s3 sync"| B
     B -->|"pipeline.py · per-cohort micro-batch<br/>parse → build → MERGE"| ST
-    ST -->|"read_silver → denormalize"| G
-    G -.->|"corpus contract"| DS["scribe-iq (RAG)<br/>clinical-bert-pipeline (NLP)<br/>Ollama generation"]
+    ST -->|"build_gold · Polars denormalize → overwrite"| G
+    G -.->|"corpus contract v1.0.0"| DS["scribe-iq (RAG)<br/>clinical-bert-pipeline (NLP)<br/>Ollama generation"]
 
     classDef done fill:#d4edda,stroke:#28a745;
     classDef planned fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4 3;
-    class B,ST done;
-    class G planned;
+    class B,ST,G done;
 ```
 
 ## Layers (as-built)
@@ -46,7 +45,7 @@ flowchart TD
 |-------|-------|---------|-------|
 | Bronze | ✅ built (local) | raw JSON, cohort-partitioned | append-only; `_metadata/manifest.json` provenance |
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
-| Gold | 🔜 Session 3 | Delta | `encounter_summary` (1 row/encounter) + `corpus_manifest` |
+| Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; corpus contract v1.0.0 (ADR-012) |
 | Fabric execution | 🔜 Session 4 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
 
 ## Module map
@@ -62,12 +61,16 @@ local/
     schema_utils.py  Field-type-driven Arrow coercion (UTC ts, date32, string codes)
     silver_*.py      One module per Silver table; explicit schemas
     registry.py      table → (schema, primary_key, build_fn) — single source of truth
+  gold/            Pure Gold denormalization → Arrow (Polars join engine, ADR-012)
+    encounter_summary.py  Silver → gold.encounter_summary; GOLD_SCHEMA + corpus contract
+    corpus_manifest.py    Lineage + coverage stats → gold/_metadata/corpus_manifest.json
   validation/      schema_registry.py (rules) + validate.py → silver.ingest_log
   ingest/          download.py (S3 sync + cohort partition) · bronze_landing · streaming_sim
-  pipeline.py      Bronze → Silver orchestration (per-cohort micro-batch)
+  pipeline.py      Bronze → Silver → Gold orchestration (run_pipeline · build_gold)
   redaction.py     PHI-safe log references (ADR-010)
 scripts/
   gen_data_dictionary.py   Generates docs/DATA_DICTIONARY.md from the registry (ADR-011)
+  gen_corpus_schema.py     Generates schemas/gold_encounter_summary.json from GOLD_SCHEMA (ADR-012)
 ```
 
 ## Key properties (and where enforced)
@@ -83,5 +86,7 @@ scripts/
 
 ## Current scale (full local run)
 
-1,280 bundles (1,278 patients) → 10 Silver Delta tables in **2m30s** on M1 Max, all
-validations passing. Per-table counts and methodology: [BENCHMARKS.md](BENCHMARKS.md).
+1,280 bundles (1,278 patients) → 10 Silver Delta tables in **2m30s**, then →
+**143,946** `gold.encounter_summary` rows in **~5s** on M1 Max, all validations passing.
+Per-table counts, corpus coverage, and methodology: [BENCHMARKS.md](BENCHMARKS.md). The
+Gold corpus contract is documented in [CORPUS_CONTRACT.md](CORPUS_CONTRACT.md).

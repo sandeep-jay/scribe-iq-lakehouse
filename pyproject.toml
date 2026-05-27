@@ -29,6 +29,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "black>=24.0",
+    "jsonschema>=4.0",  # validates Gold corpus rows against the published contract
 ]
 
 [tool.setuptools.packages.find]
