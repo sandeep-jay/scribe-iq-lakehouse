@@ -1,4 +1,4 @@
-# HANDOFF — Session 2
+# HANDOFF — Session 2 (+ post-Session-2 hardening & docs)
 **Date:** 2026-05-27
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
@@ -7,10 +7,13 @@
 
 ## Session summary
 Built the full local Bronze→Silver pipeline and ran it on the **entire** Synthea Coherent
-FHIR dataset (1,280 files / 4.6 GB). All 10 Silver Delta tables materialized in 2m30s on
-the M1 Max with CDC enabled and every validation passing. Added the `LocalLitePlatform`
-(Polars + delta-rs), 7 silver transforms, validation layer, ingest + streaming-sim, and
-36 new tests (79 total). Work runs in a `.venv` per the user's request.
+FHIR dataset (1,280 files / 4.6 GB): all 10 Silver Delta tables materialized in 2m30s on
+the M1 Max with CDC enabled and every validation passing (`LocalLitePlatform` + 7 silver
+transforms + validation + ingest/streaming-sim). Then hardened and documented it:
+PHI-safe log redaction (ADR-010), split Claude Code settings (tracked vs gitignored local),
+and a **generated-first** documentation system (ADR-011) — ARCHITECTURE, generated
+DATA_DICTIONARY, BENCHMARKS, plus a doc-as-test and read-only pre-commit gate so docs
+can't drift. 86 tests passing; tree clean. Gold layer (Session 3) is the next build.
 
 ---
 
@@ -24,8 +27,9 @@ the M1 Max with CDC enabled and every validation passing. Added the `LocalLitePl
 - `local/validation/` — `schema_registry.py` + `validate.py` → `silver.ingest_log`
 - `local/ingest/bronze_landing.py` + `streaming_sim.py` (cohort replay + watchdog)
 - `local/pipeline.py` — per-cohort micro-batch orchestration (`python -m local.pipeline`)
-- 83 tests passing; ruff clean; black formatted
-- ADR-008 (dict parsing) + ADR-009 (local Silver) + ADR-010 (PHI-safe logging)
+- 86 tests passing; ruff clean; black formatted
+- ADR-008 (dict parsing) + ADR-009 (local Silver) + ADR-010 (PHI-safe logging) +
+  ADR-011 (generated-first docs)
 - `local/redaction.py` — `redact()` for PHI-safe logs; applied to skip-warnings (ADR-010)
 - **Full dataset processed → Silver Delta tables on disk under `data/silver/` (gitignored)**
 
@@ -144,14 +148,23 @@ M5 Max: arriving ~June 2, 2026
 ## ADRs written this session
 - ADR-009: Local Silver materialization — delta-rs, type coercion, component JSON
 - ADR-010: PHI-safe logging via redaction
+- ADR-011: Generated-first documentation
 
-## Post-Session-2 commits
+## Post-Session-2 commits (this session)
 - `4cfeed9` fix(platform): redact patient identifiers from logs
 - `a66b362` chore(config): split Claude Code settings into shared + local
 - `f0e339e` docs: record PHI-safe logging + settings split across project docs
-- (pending) docs: generated-first doc set — ARCHITECTURE, DATA_DICTIONARY (generated),
-  BENCHMARKS, ADR-011, doc-as-test
+- `94cbffc` docs: generated-first doc set (ARCHITECTURE, DATA_DICTIONARY, BENCHMARKS)
+- `aee3dbd` chore(docs): wire doc-sync into session-end + read-only pre-commit gate
+- (uncommitted, this session-end) HANDOFF + CHANGELOG refresh
 
 ## ADRs (running list)
 - ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
   ADR-011 generated-first docs
+
+## Note on settings.json churn
+The harness keeps appending auto-approved Bash permissions to the **tracked**
+`.claude/settings.json` each session; we relocate them into gitignored
+`.claude/settings.local.json` and `git restore` the tracked file. Recurs every session.
+Permanent fix offered but not taken: untrack settings.json (`git rm --cached` + gitignore,
+keep `settings.example.json` as the shared template).

@@ -16,6 +16,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   per-table row counts) + engine comparison matrix.
 - `tests/test_docs_generated.py`: doc-as-test — fails if DATA_DICTIONARY is stale (86 total).
 - ADR-011: Generated-first documentation.
+#### Enforcement
+- `/session-end` command + CLAUDE.md protocol: added a "Sync the docs" step (regenerate
+  DATA_DICTIONARY; update ARCHITECTURE/BENCHMARKS/CORPUS_CONTRACT by judgment; never
+  bulldoze hand-written docs).
+- `.pre-commit-config.yaml`: local `data-dictionary-current` hook runs
+  `gen_data_dictionary.py --check` — read-only, fails the commit on drift, never writes.
 #### Deferred
 - `docs/CORPUS_CONTRACT.md` + its schema-conformance test → built with the Gold layer
   (a contract test is only meaningful once `gold.encounter_summary` exists).
