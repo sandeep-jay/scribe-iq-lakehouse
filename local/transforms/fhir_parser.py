@@ -18,6 +18,11 @@ Design notes derived from inspecting real Coherent bundles:
 
 The class returns plain dicts; conversion to ``pyarrow.Table`` happens in the
 Silver transforms (Session 2), keeping this layer free of schema/Arrow concerns.
+
+Logging policy: this is a hot path (called once per bundle, per resource), so it
+logs sparingly — a per-bundle DEBUG summary of extracted counts and WARNINGs for
+unrecoverable decode failures. Log messages never contain ``patient_id``,
+``encounter_id``, note text, or any other identifier/PHI (CLAUDE.md security rules).
 """
 
 from __future__ import annotations
@@ -224,6 +229,8 @@ class FHIRBundleParser:
         for resource in by_type.get("ImagingStudy", []):
             out["imaging_study"].append(self.extract_imaging_study(resource))
 
+        # DiagnosticReports are split by kind; other report types (lab panels, H&P
+        # notes, death certificates) are intentionally not extracted to Silver here.
         for report in by_type.get("DiagnosticReport", []):
             if self._is_genomic_report(report):
                 out["genomic_report"].append(self.extract_genomic_report(report))
@@ -231,6 +238,9 @@ class FHIRBundleParser:
                 linked = self._resolve_results(report, by_id)
                 out["ecg_metadata"].append(self.extract_ecg_metadata(report, linked))
 
+        # One DEBUG line per bundle: counts only, never identifiers (see logging policy).
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("parse_bundle extracted %s", {k: len(v) for k, v in out.items()})
         return out
 
     @staticmethod

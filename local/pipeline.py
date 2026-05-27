@@ -19,6 +19,7 @@ from pathlib import Path
 from local.ingest.bronze_landing import DEFAULT_BRONZE, cohort_files, cohort_labels
 from local.platform.base import LakehousePlatform
 from local.platform.factory import get_platform
+from local.redaction import redact
 from local.transforms.fhir_parser import FHIRBundleParser
 from local.transforms.registry import SILVER_TABLES
 from local.validation.validate import results_to_arrow, validate_table
@@ -33,7 +34,8 @@ def _parse_cohort(parser: FHIRBundleParser, files: list[Path]) -> dict[str, list
         try:
             bundle = _read_json(path)
         except (OSError, ValueError):
-            logger.warning("Skipping unreadable bundle: %s", path.name)
+            # Redact the filename — it embeds the patient name/UUID (see local.redaction).
+            logger.warning("Skipping unreadable bundle %s", redact(path.name))
             continue
         parsed = parser.parse_bundle(bundle)
         for table_name in SILVER_TABLES:

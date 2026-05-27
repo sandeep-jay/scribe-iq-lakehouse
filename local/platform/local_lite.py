@@ -20,6 +20,7 @@ import pyarrow as pa
 from deltalake import DeltaTable, write_deltalake
 
 from local.platform.base import LakehousePlatform
+from local.redaction import redact
 from local.transforms.registry import SILVER_PRIMARY_KEYS
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class LocalLitePlatform(LakehousePlatform):
             try:
                 bundles.append(json.loads(path.read_text()))
             except (json.JSONDecodeError, OSError):
-                logger.warning("Skipping unreadable bundle: %s", path.name)
+                logger.warning("Skipping unreadable bundle %s", redact(path.name))
         return bundles
 
     def iter_bronze_files(self, cohort: str | None = None):
@@ -77,7 +78,7 @@ class LocalLitePlatform(LakehousePlatform):
             try:
                 yield path, json.loads(path.read_text())
             except (json.JSONDecodeError, OSError):
-                logger.warning("Skipping unreadable bundle: %s", path.name)
+                logger.warning("Skipping unreadable bundle %s", redact(path.name))
 
     # ------------------------------------------------------------ silver/gold
 
