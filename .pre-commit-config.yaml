@@ -49,3 +49,15 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+
+  # Generated docs must match the code. READ-ONLY (--check): never writes a file,
+  # only fails the commit telling you to run `python scripts/gen_data_dictionary.py`.
+  # Runs in the project env (venv active locally, or pip-installed deps in CI).
+  - repo: local
+    hooks:
+      - id: data-dictionary-current
+        name: data dictionary is current (generated)
+        entry: python scripts/gen_data_dictionary.py --check
+        language: system
+        pass_filenames: false
+        files: '^(local/transforms/registry\.py|local/validation/(schema_registry|validate)\.py|scripts/gen_data_dictionary\.py|docs/DATA_DICTIONARY\.md)$'

@@ -41,7 +41,10 @@ Upstream of: scribe-iq (replaces 19-patient dev corpus with 1,500-patient corpus
 
 ## Session protocol
 START: Read HANDOFF.md → state current status in 3 sentences → begin first task
-END:   HANDOFF.md → CHANGELOG.md → pytest → pending ADRs → commit
+END:   HANDOFF.md → CHANGELOG.md → sync docs (regen DATA_DICTIONARY; update
+       ARCHITECTURE/BENCHMARKS/CORPUS_CONTRACT if changed) → pytest → pending ADRs → commit
+       Generated docs: only scripts/gen_data_dictionary.py writes (one file); pre-commit
+       `--check` is read-only. Never hand-bulldoze a doc — surface conflicts (ADR-011).
 
 ## Key files
   docs/roadmap/scribe-iq-lakehouse-spec.md   Full implementation spec
