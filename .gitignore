@@ -54,5 +54,9 @@ mlartifacts/
 # DVC
 /data/*.dvc
 
+# Claude Code — personal/auto-approved permissions stay local (machine-specific).
+# Shared config (settings.json, skills/, commands/, rules/, hooks/) IS tracked.
+.claude/settings.local.json
+
 # detect-secrets baseline (commit this file — it's the known-clean baseline)
 # .secrets.baseline  ← intentionally NOT ignored
