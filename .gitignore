@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and credentials — never commit
+.env
+.env.*
+*.env
+secrets/
+credentials/
+*credentials*.json
+*service_account*.json
+lakehouse_config.local.json
+
+# Data — large files tracked by DVC
+data/
+*.parquet
+*.delta
+*.avro
+
+# Delta Lake local
+_delta_log/
+_checkpoints/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# DVC
+/data/*.dvc
+
+# detect-secrets baseline (commit this file — it's the known-clean baseline)
+# .secrets.baseline  ← intentionally NOT ignored

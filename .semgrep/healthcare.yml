@@ -1,0 +1,76 @@
+rules:
+  # Block hardcoded OneLake paths — must use platform.storage_path() (ADR-002)
+  - id: no-hardcoded-onelake-path
+    patterns:
+      - pattern: '"abfss://$LAKE@onelake.dfs.core.windows.net$PATH"'
+    message: >
+      Hardcoded OneLake path detected. Use platform.storage_path() instead.
+      See ADR-002: Platform abstraction layer.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "local/**"
+        - "fabric/**"
+
+  # Block Fabric/Spark imports in pure transforms (ADR-002)
+  - id: no-platform-import-in-transforms
+    patterns:
+      - pattern: import pyspark.$X
+      - pattern: from pyspark import $X
+      - pattern: import notebookutils
+      - pattern: import mssparkutils
+    message: >
+      Platform import in local/transforms/. Transforms must be pure Python.
+      Move Spark/Fabric code to local/platform/. See ADR-002.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "local/transforms/**"
+
+  # Warn on PHI in log statements
+  - id: no-phi-in-logs
+    patterns:
+      - pattern: logging.$LEVEL(..., $MSG, ..., patient_id, ...)
+      - pattern: logging.$LEVEL(..., $MSG, ..., encounter_id, ...)
+      - pattern: print(..., patient_id, ...)
+      - pattern: print(..., encounter_id, ...)
+    message: >
+      Potential PHI (patient_id or encounter_id) in log/print statement.
+      Use anonymized identifiers or remove from log output.
+    severity: WARNING
+    languages: [python]
+
+  # Block direct FHIR field access without .get() (healthcare-data skill)
+  - id: no-direct-fhir-access
+    patterns:
+      - pattern: $RESOURCE["resourceType"]
+      - pattern: $RESOURCE["id"]
+      - pattern: $RESOURCE["birthDate"]
+    message: >
+      Direct FHIR field access without .get(). FHIR fields are optional.
+      Use resource.get("field", default) to avoid KeyError on missing fields.
+    severity: WARNING
+    languages: [python]
+    paths:
+      include:
+        - "local/transforms/**"
+
+  # Block pydicom without stop_before_pixels (ADR-006)
+  - id: dicom-stop-before-pixels
+    patterns:
+      - pattern: pydicom.dcmread($FILE)
+      - pattern: pydicom.dcmread($FILE, $OPTS)
+        metavariable-pattern:
+          metavariable: $OPTS
+          pattern-not: "..., stop_before_pixels=True, ..."
+    message: >
+      pydicom.dcmread() called without stop_before_pixels=True.
+      This may load large pixel data. Always use stop_before_pixels=True
+      for metadata extraction. See ADR-006.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "local/**"

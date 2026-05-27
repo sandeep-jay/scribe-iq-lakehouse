@@ -1,0 +1,51 @@
+repos:
+  # Secret scanning — blocks commits with leaked credentials
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: '\.secrets\.baseline'
+
+  # Git history secret scan
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # Python security linting (medium+ severity only)
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+      - id: bandit
+        args: ["-r", "local/", "-ll", "--skip", "B101"]
+        # B101 = assert_used — allowed in tests, skip globally
+
+  # Semgrep — custom healthcare + platform rules
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.70.0
+    hooks:
+      - id: semgrep
+        args: ["--config", ".semgrep/", "--error", "--quiet"]
+        pass_filenames: false
+
+  # Standard hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: detect-private-key
+
+  # Python formatting check (ruff + black)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
