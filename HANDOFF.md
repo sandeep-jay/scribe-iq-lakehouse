@@ -24,9 +24,15 @@ the M1 Max with CDC enabled and every validation passing. Added the `LocalLitePl
 - `local/validation/` — `schema_registry.py` + `validate.py` → `silver.ingest_log`
 - `local/ingest/bronze_landing.py` + `streaming_sim.py` (cohort replay + watchdog)
 - `local/pipeline.py` — per-cohort micro-batch orchestration (`python -m local.pipeline`)
-- 79 tests passing; ruff clean; black formatted
-- ADR-008 (dict parsing) + ADR-009 (local Silver materialization)
+- 83 tests passing; ruff clean; black formatted
+- ADR-008 (dict parsing) + ADR-009 (local Silver) + ADR-010 (PHI-safe logging)
+- `local/redaction.py` — `redact()` for PHI-safe logs; applied to skip-warnings (ADR-010)
 - **Full dataset processed → Silver Delta tables on disk under `data/silver/` (gitignored)**
+
+**Claude Code config convention (new):**
+- `.claude/settings.json` is tracked (curated allow globs + deny + hooks, portable
+  `$CLAUDE_PROJECT_DIR` hook path). Personal/auto-approved permissions now live in
+  gitignored `.claude/settings.local.json` — it will NOT show up in `git status`.
 
 **Silver row counts (full run, all validations passed):**
 ```
@@ -60,9 +66,10 @@ imaging_study       3,752     genomic_report        419
 
 ## Test status
 ```
-79 passed (venv: .venv/bin/python -m pytest)
-  fhir_parser, silver_soap_notes, platform_factory   (Session 1)
+83 passed (venv: .venv/bin/python -m pytest)
+  fhir_parser, silver_soap_notes, platform_factory      (Session 1)
   schema_utils, silver_transforms, local_lite, validate (Session 2)
+  redaction                                             (post-S2 hardening)
 ruff: All checks passed   |   black: formatted
 ```
 
@@ -97,7 +104,7 @@ Storage root: data/ (gitignored) — bronze/fhir/cohort=A|B|C + silver/<10 table
 Bronze: 1,280 raw JSON bundles, 4.6 GB, manifest at data/bronze/_metadata/manifest.json
 Silver: 10 Delta tables + ingest_log, CDC enabled, all validations passed
 Gold: none yet (Session 3)
-Tests: 79 passing
+Tests: 83 passing
 Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
@@ -119,3 +126,8 @@ M5 Max: arriving ~June 2, 2026
 
 ## ADRs written this session
 - ADR-009: Local Silver materialization — delta-rs, type coercion, component JSON
+- ADR-010: PHI-safe logging via redaction
+
+## Post-Session-2 commits
+- `4cfeed9` fix(platform): redact patient identifiers from logs
+- `a66b362` chore(config): split Claude Code settings into shared + local

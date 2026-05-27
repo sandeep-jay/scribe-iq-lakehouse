@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Post-Session-2 hardening
+#### Security
+- `local/redaction.py`: `redact()` → non-reversible `ref:<hash>` for identifier-bearing
+  values. Applied to "skipping unreadable bundle" warnings in `pipeline.py` and
+  `local_lite.py`, which previously logged Synthea filenames embedding patient name + UUID
+  (ADR-010). 4 redaction tests added (83 total).
+- `fhir_parser.py`: per-bundle DEBUG summary logs counts only (no identifiers) + explicit
+  logging-policy note in the module docstring.
+#### Changed
+- Split Claude Code settings: tracked `.claude/settings.json` trimmed to curated allow
+  globs + deny + hooks (hook command now uses `$CLAUDE_PROJECT_DIR`, portable); personal/
+  auto-approved permissions moved to gitignored `.claude/settings.local.json`.
+
 ### Session 2 — Local Bronze + Silver pipeline (full dataset)
 #### Added
 - `local/ingest/download.py`: parallel `aws s3 sync` (no-sign-request) + round-robin

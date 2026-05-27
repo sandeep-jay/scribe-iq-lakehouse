@@ -36,6 +36,8 @@ Upstream of: scribe-iq (replaces 19-patient dev corpus with 1,500-patient corpus
 7. pydicom stop_before_pixels=True everywhere — never load pixel data
 8. No credentials in notebooks — Fabric Environment Variables or Key Vault only
 9. Session ends with updated HANDOFF.md
+10. Logs never contain raw patient/encounter identifiers or bundle filenames —
+    redact identifier-bearing values via local.redaction.redact() (ADR-010)
 
 ## Session protocol
 START: Read HANDOFF.md → state current status in 3 sentences → begin first task
@@ -48,8 +50,17 @@ END:   HANDOFF.md → CHANGELOG.md → pytest → pending ADRs → commit
   HANDOFF.md                                 Current session state (updated every session)
   CHANGELOG.md                               All meaningful changes
   local/platform/base.py                     Platform abstraction interface
+  local/platform/local_lite.py               LocalLitePlatform (Polars + delta-rs)
   local/transforms/                          Engine-agnostic transform logic (pure Python)
+  local/transforms/registry.py               Silver table → schema/key/build mapping
+  local/validation/                          Schema registry + quality checks → ingest_log
+  local/pipeline.py                          Local Bronze → Silver orchestration
+  local/redaction.py                         PHI-safe log references (ADR-010)
   fabric/notebooks/                          Fabric execution notebooks (00-10)
+
+## Claude Code config
+  .claude/settings.json        Tracked: curated allow globs + deny + hooks (portable paths)
+  .claude/settings.local.json  Gitignored: personal/auto-approved permissions (machine-specific)
 
 ## Screenshot capture priority (Fabric trial ~15 days remaining)
 If time is tight: capture screenshots BEFORE polishing notebooks.

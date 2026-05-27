@@ -20,6 +20,9 @@ feeding `scribe-iq` (clinical RAG) and `clinical-bert-pipeline` (NLP).
 - **Honest data modeling**: genomic `data_limitation` is a first-class column
   ([ADR-007](docs/adr/007-genomic-data-limitation.md)); DICOM headers extracted without
   pixel data ([ADR-006](docs/adr/006-dicom-stop-before-pixels.md)).
+- **PHI-safe by construction**: logs never contain patient identifiers — bundle
+  references are redacted to a non-reversible `ref:<hash>`
+  ([ADR-010](docs/adr/010-phi-safe-logging.md)). Synthetic data, production discipline.
 
 ## Source data
 

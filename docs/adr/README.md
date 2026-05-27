@@ -11,3 +11,4 @@
 | 007 | Genomic data_limitation as first-class column | Accepted | 2026-05-27 |
 | 008 | Dict-based FHIR parsing (not fhir.resources models) | Accepted | 2026-05-27 |
 | 009 | Local Silver materialization — delta-rs, type coercion, component JSON | Accepted | 2026-05-27 |
+| 010 | PHI-safe logging via redaction | Accepted | 2026-05-27 |
