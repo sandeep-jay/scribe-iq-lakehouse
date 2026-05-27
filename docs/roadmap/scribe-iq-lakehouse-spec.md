@@ -1,10 +1,10 @@
 # scribe-iq-lakehouse — Project Spec
 
-**Portfolio project:** Sandeep Jayaprakash  
-**Repo:** `scribe-iq-lakehouse`  
-**Status:** Implementation-ready  
-**Implementation:** Claude Code  
-**Execution environments:** Microsoft Fabric (Bronze + Silver) + Local Python (Gold)  
+**Portfolio project:** Sandeep Jayaprakash
+**Repo:** `scribe-iq-lakehouse`
+**Status:** Implementation-ready
+**Implementation:** Claude Code
+**Execution environments:** Microsoft Fabric (Bronze + Silver) + Local Python (Gold)
 **Trial window:** ~15-20 days remaining — Fabric work starts immediately
 
 ---
@@ -41,8 +41,8 @@ Silver and the corpus handoff contract. Gold generation follows once this ships.
 
 ## 2. Source Dataset — Synthea Coherent
 
-**Location:** `s3://synthea-open-data/coherent/` (AWS Open Data, no credentials needed)  
-**Size:** 9GB  
+**Location:** `s3://synthea-open-data/coherent/` (AWS Open Data, no credentials needed)
+**Size:** 9GB
 **Format:** FHIR R4 bundles (JSON), one bundle per patient
 
 ### What it contains
@@ -304,7 +304,7 @@ scribe-iq-lakehouse/
 df = (spark.readStream
       .format("cloudFiles")
       .option("cloudFiles.format", "json")
-      .option("cloudFiles.schemaLocation", 
+      .option("cloudFiles.schemaLocation",
               f"{BRONZE_PATH}/_schemas/fhir/")
       .load(f"{BRONZE_PATH}/fhir/"))
 
@@ -346,28 +346,28 @@ class FHIRBundleParser:
     Parses a Synthea Coherent FHIR R4 bundle JSON.
     Extracts all resource types into typed dicts.
     """
-    
+
     def parse_bundle(self, bundle_json: dict) -> dict:
         """Returns dict of resource_type → list of extracted records"""
-        
+
     def extract_patient(self, resource) -> dict:
         """Demographics, identifiers, birth date, gender, address"""
-        
+
     def extract_encounter(self, resource) -> dict:
         """Type, period, status, class, provider reference"""
-        
+
     def extract_condition(self, resource) -> dict:
         """Code, display, onset, clinical status, encounter ref"""
-        
+
     def extract_observation(self, resource) -> dict:
         """Code, value, unit, effective date, category, encounter ref"""
-        
+
     def extract_medication_request(self, resource) -> dict:
         """Medication code, display, dosage, route, authored date"""
-        
+
     def extract_procedure(self, resource) -> dict:
         """Code, display, performed period, encounter ref"""
-        
+
     def extract_soap_note(self, binary_resource, doc_ref) -> dict:
         """
         Base64 decode Binary resource → plain text SOAP note.
@@ -377,7 +377,7 @@ class FHIRBundleParser:
         """
         raw = base64.b64decode(binary_resource.data).decode("utf-8")
         return self._parse_soap_sections(raw, doc_ref)
-        
+
     def extract_ecg_metadata(self, diagnostic_report, observations) -> dict:
         """
         ECG DiagnosticReport: conclusion, status, effective date.
@@ -386,7 +386,7 @@ class FHIRBundleParser:
         Returns: patient_id, encounter_id, finding, rhythm,
                  heart_rate_bpm, report_date, has_waveform_binary
         """
-        
+
     def extract_imaging_study(self, resource, dicom_binary=None) -> dict:
         """
         Two-pass extraction:
@@ -625,7 +625,7 @@ Enable on all Silver tables immediately:
 
 ```sql
 -- Run in Fabric Spark notebook after table creation
-ALTER TABLE silver.patient 
+ALTER TABLE silver.patient
 SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
 
 ALTER TABLE silver.encounter
@@ -753,7 +753,7 @@ parser = FHIRBundleParser()
 raw_df = (spark.readStream
           .format("cloudFiles")
           .option("cloudFiles.format", "json")
-          .option("cloudFiles.schemaLocation", 
+          .option("cloudFiles.schemaLocation",
                   f"{BRONZE_PATH}/_schemas/")
           .load(f"{BRONZE_PATH}/fhir/"))
 
@@ -1099,7 +1099,7 @@ Clear separation maintained.
 ```
 1. Init repo structure, pyproject.toml, requirements.txt
 2. Download 5-patient sample bundle from S3 (no-sign-request)
-   aws s3 cp s3://synthea-open-data/coherent/fhir/ tests/fixtures/ 
+   aws s3 cp s3://synthea-open-data/coherent/fhir/ tests/fixtures/
              --no-sign-request --recursive --max-keys 5
 3. local/transforms/fhir_parser.py
    - FHIRBundleParser class
@@ -1284,13 +1284,13 @@ The Delta format is identical — same notebooks, different storage path.
 
 ---
 
-*Document version: 3.0 — May 2026*  
-*Added: DICOM header metadata extraction (pydicom stop_before_pixels),*  
-*genomic report metadata with honest limitation field,*  
-*updated Silver schemas for imaging_study and genomic_report,*  
-*updated Gold imaging struct, comprehensive 6-phase roadmap,*  
-*explicit reasoning for each deferral decision*  
-*Status: Ready for implementation via Claude Code*  
+*Document version: 3.0 — May 2026*
+*Added: DICOM header metadata extraction (pydicom stop_before_pixels),*
+*genomic report metadata with honest limitation field,*
+*updated Silver schemas for imaging_study and genomic_report,*
+*updated Gold imaging struct, comprehensive 6-phase roadmap,*
+*explicit reasoning for each deferral decision*
+*Status: Ready for implementation via Claude Code*
 *Ollama Gold generation spec: separate document, follows this spec*
 
 ---
@@ -1468,7 +1468,7 @@ USING DELTA;
 After each Silver write, compare against previous run:
 
 ```python
-def check_row_count_drift(table_name, current_count, 
+def check_row_count_drift(table_name, current_count,
                            threshold_pct=0.10):
     """
     Fail if row count drops more than threshold vs last run.
@@ -1626,7 +1626,7 @@ CI validates notebook syntax and schema contracts on every PR.
   "workspace": "scribe-iq-lakehouse",
   "environment": "production",       # production / staging / dev
   "bronze_lakehouse": "bronze_lakehouse",
-  "silver_lakehouse": "silver_lakehouse", 
+  "silver_lakehouse": "silver_lakehouse",
   "gold_lakehouse": "gold_lakehouse",
   "onelake_path": "abfss://...",
   "validation": {
@@ -1852,11 +1852,11 @@ Capture in this order — earlier items are foundations for later ones.
 Use this script for any recorded demo or live walkthrough.
 
 **Opening (30 seconds)**
-> "This is scribe-iq-lakehouse — a production-pattern healthcare data 
-> lakehouse built on Synthea Coherent, the richest publicly available 
-> synthetic longitudinal patient dataset. It ingests 9GB of FHIR data 
-> including SOAP notes, ECG metadata, DICOM, and genomics, processes 
-> it through a medallion architecture in Microsoft Fabric, and produces 
+> "This is scribe-iq-lakehouse — a production-pattern healthcare data
+> lakehouse built on Synthea Coherent, the richest publicly available
+> synthetic longitudinal patient dataset. It ingests 9GB of FHIR data
+> including SOAP notes, ECG metadata, DICOM, and genomics, processes
+> it through a medallion architecture in Microsoft Fabric, and produces
 > a governed corpus that feeds two downstream AI projects."
 
 **Workspace overview (1 minute)**
@@ -1911,9 +1911,9 @@ Use this script for any recorded demo or live walkthrough.
 
 **Closing (30 seconds)**
 > "The Gold encounter_summary feeds Scribe IQ's RAG layer directly,
-> replacing the current heuristic corpus. It also feeds the 
+> replacing the current heuristic corpus. It also feeds the
 > clinical-bert-pipeline for discriminative NLP. The Ollama generation
-> spec builds on top of this — using the SOAP notes as grounding 
+> spec builds on top of this — using the SOAP notes as grounding
 > anchors for synthetic dialogue generation."
 
 **Total: ~10 minutes**
@@ -2283,7 +2283,7 @@ class DatabricksPlatform(LakehousePlatform):
 
 ---
 
-*Document version: 5.0 — May 2026*  
-*Final: locked weekend plan, 200-note portfolio corpus,*  
-*M5 full corpus June, corpus migration deferred, MASTER_PLAN.md*  
+*Document version: 5.0 — May 2026*
+*Final: locked weekend plan, 200-note portfolio corpus,*
+*M5 full corpus June, corpus migration deferred, MASTER_PLAN.md*
 *Status: READY FOR EXECUTION*

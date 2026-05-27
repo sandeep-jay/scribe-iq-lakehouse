@@ -1,11 +1,11 @@
 # Ollama Gold Generation Pipeline — Project Spec
 
-**Portfolio project:** Sandeep Jayaprakash  
-**Repo:** `scribe-iq-lakehouse` — `gold/generation/` module  
-**Status:** Implementation-ready  
-**Implementation:** Claude Code  
-**Hardware:** M1 Max 32GB — Ollama + local models  
-**Depends on:** scribe-iq-lakehouse Silver + Gold encounter_summary  
+**Portfolio project:** Sandeep Jayaprakash
+**Repo:** `scribe-iq-lakehouse` — `gold/generation/` module
+**Status:** Implementation-ready
+**Implementation:** Claude Code
+**Hardware:** M1 Max 32GB — Ollama + local models
+**Depends on:** scribe-iq-lakehouse Silver + Gold encounter_summary
 
 ---
 
@@ -40,10 +40,10 @@ These outputs feed:
 
 ### Task A — Synthetic Dialogue
 
-**Input:** `gold.encounter_summary` row (patient facts + SOAP note)  
-**Output:** Doctor-patient dialogue, 8-15 turns  
-**Model pipeline:** qwen3-medical (plan + roleplay) → gemma4-polish (refine)  
-**Validation:** qwq-checker (clinical fact accuracy)  
+**Input:** `gold.encounter_summary` row (patient facts + SOAP note)
+**Output:** Doctor-patient dialogue, 8-15 turns
+**Model pipeline:** qwen3-medical (plan + roleplay) → gemma4-polish (refine)
+**Validation:** qwq-checker (clinical fact accuracy)
 **Table:** `gold.synthetic_dialogue`
 
 **Why this adds value over SOAP notes alone:**
@@ -54,11 +54,11 @@ These outputs feed:
 
 ### Task B — Unstructured Progress Note
 
-**Input:** `gold.encounter_summary` row (same input as Task A)  
+**Input:** `gold.encounter_summary` row (same input as Task A)
 **Output:** Free-text progress note in different format from SOAP
-            (narrative style, not structured S/O/A/P headers)  
-**Model pipeline:** qwen3-medical or medgemma-dialogue (single stage)  
-**Validation:** structural check + entity overlap with source facts  
+            (narrative style, not structured S/O/A/P headers)
+**Model pipeline:** qwen3-medical or medgemma-dialogue (single stage)
+**Validation:** structural check + entity overlap with source facts
 **Table:** `gold.synthetic_note_unstructured`
 
 **Why this adds value:**
@@ -296,36 +296,36 @@ class ModelProfile(Enum):
 class GenerationConfig:
     # Model selection
     profile: ModelProfile = ModelProfile.COMFORTABLE
-    
+
     # Task control
     run_task_a: bool = True         # dialogue generation
     run_task_b: bool = True         # unstructured note generation
     run_validation: bool = True     # QwQ fact checking
-    
+
     # Scale
     max_notes: int = None           # None = all available
     batch_size: int = 10            # notes per batch before checkpoint write
-    
+
     # Quality gates
     min_dialogue_turns: int = 8
     max_dialogue_turns: int = 15
     min_note_words: int = 150
     max_note_words: int = 800
     max_validation_issues: int = 2  # max issues before flagging for review
-    
+
     # Generation params
     dialogue_temperature: float = 0.7
     polish_temperature: float = 0.8
     note_temperature: float = 0.75
-    
+
     # Few-shot
     use_few_shots: bool = True
     few_shot_count: int = 2
-    
+
     # Output
     gold_path: str = "data/gold"
     checkpoint_path: str = "gold/generation/.checkpoint"
-    
+
     # Model names (per runbook)
     planner_model: str = "qwen3-medical"
     roleplay_model: str = "qwen3-medical"
@@ -432,7 +432,7 @@ class GenerationCheckpoint:
         self.state["stats"]["flagged"] += 1
         self._save()
 
-    def get_pending(self, 
+    def get_pending(self,
                      encounter_ids: list[str]) -> list[str]:
         """Return encounter IDs not yet complete."""
         return [
@@ -764,7 +764,7 @@ class ClinicalValidator:
         Layer 1 — Structural: turn count, format check (fast, no model)
         Layer 2 — Entity overlap: do medications/conditions appear? (fast)
         Layer 3 — QwQ semantic check: factual accuracy (slow, model call)
-        
+
         Only run Layer 3 if Layers 1-2 pass.
         Saves ~15 seconds per note when structural issues caught early.
         """
@@ -1557,8 +1557,8 @@ Session end: always run a 3-note test before marking session done.
 
 ---
 
-*Document version: 2.0 — May 2026*  
-*Final: 200-note portfolio corpus, M5 full corpus June,*  
-*Task B deferred, fast-plan mode, Sunday-only sessions,*  
-*stratified subset selection, scribe-iq 19-patient context*  
+*Document version: 2.0 — May 2026*
+*Final: 200-note portfolio corpus, M5 full corpus June,*
+*Task B deferred, fast-plan mode, Sunday-only sessions,*
+*stratified subset selection, scribe-iq 19-patient context*
 *Status: READY FOR EXECUTION*

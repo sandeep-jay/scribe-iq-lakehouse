@@ -1,6 +1,6 @@
 # Claude Code Setup — scribe-iq-lakehouse + clinical-bert-pipeline
 
-**Owner:** Sandeep Jayaprakash  
+**Owner:** Sandeep Jayaprakash
 **Purpose:** Complete Claude Code configuration for both projects —
 skills, agents, CLAUDE.md, session handoffs, changelog discipline,
 and ADR practice.
@@ -168,11 +168,11 @@ END:   Update HANDOFF.md → update CHANGELOG.md → commit
 @karpathy    — deep technical reasoning, "think step by step"
                Use for: complex architectural decisions, debugging,
                choosing between technical approaches
-               
+
 @with-docs   — always fetch and read docs before implementing
                Use for: every library, every API, every framework
                Prevents hallucinated APIs
-               
+
 @matt-pocock — TypeScript excellence, type safety patterns
                Use for: any TypeScript in frontend (scribe-iq Next.js)
                Less relevant for Python-heavy lakehouse work
@@ -440,9 +440,9 @@ will understand why the architecture looks the way it does.
 ```markdown
 # ADR-{number}: {short title}
 
-**Date:** {date}  
-**Status:** Accepted | Superseded by ADR-{n} | Deprecated  
-**Deciders:** Sandeep Jayaprakash  
+**Date:** {date}
+**Status:** Accepted | Superseded by ADR-{n} | Deprecated
+**Deciders:** Sandeep Jayaprakash
 
 ## Context
 
@@ -485,27 +485,27 @@ Specific files, patterns, or code that implements this decision.
 ADR-001: Fabric-first development approach
   Context: Trial expiring, job hunt active
   Decision: Fabric first, local Polars builds after trial
-  
+
 ADR-002: Platform abstraction layer
   Context: Need portability across Fabric, Databricks, AWS, GCP, local
   Decision: Abstract interface + factory pattern, Arrow interchange
-  
+
 ADR-003: Polars + DuckDB for local lite tier
   Context: Zero-dependency local pipeline for portfolio reviewers
   Decision: Polars transforms, DuckDB for SQL, delta-rs for Delta
-  
+
 ADR-004: Arrow as transform interchange format
   Context: Transforms need to work on Spark and Polars
   Decision: pa.Table return type, both engines accept Arrow natively
-  
+
 ADR-005: FHIR Binary Base64 decode for SOAP notes
   Context: Synthea Coherent embeds notes in Binary FHIR resources
   Decision: Decode in fhir_parser, link via DocumentReference
-  
+
 ADR-006: DICOM stop_before_pixels extraction
   Context: Need imaging metadata without pixel processing overhead
   Decision: pydicom stop_before_pixels=True, full pixel roadmap Phase 4
-  
+
 ADR-007: Genomic data_limitation as first-class column
   Context: Synthea genomics is simulated inheritance, not clinical
   Decision: Always populate data_limitation column, visible to consumers
@@ -946,6 +946,6 @@ bash ~/claude-os/init.sh scribe-iq-lakehouse \
 
 ---
 
-*Document version: 2.0 — May 2026*  
-*For: scribe-iq-lakehouse + clinical-bert-pipeline*  
+*Document version: 2.0 — May 2026*
+*For: scribe-iq-lakehouse + clinical-bert-pipeline*
 *claude-os full file contents: claude-os-spec.md*

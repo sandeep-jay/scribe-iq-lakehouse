@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest*)",
+      "Bash(python3 -m pytest*)",
+      "Bash(ruff check*)",
+      "Bash(black --check*)",
+      "Bash(pre-commit run*)",
+      "Bash(aws s3 cp * --no-sign-request*)",
+      "Bash(aws s3 sync * --no-sign-request*)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(find . *)",
+      "Bash(ls *)",
+      "Bash(mkdir -p *)",
+      "Bash(chmod +x *)",
+      "Bash(detect-secrets scan*)"
+    ],
+    "deny": [
+      "Bash(aws configure*)",
+      "Bash(git push --force*)"
+    ],
+    "additionalDirectories": [
+      "/Users/sandeepmarkondiahjayaprakash/.claude",
+      "/Users/sandeepmarkondiahjayaprakash/claude-os"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/sandeepmarkondiahjayaprakash/Workbench/claude-projects/scribe-iq-lakehouse/.claude/hooks/scan-secrets.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -6,9 +6,10 @@
 ---
 
 ## Session summary
-This is the bootstrap session. No code exists yet — only planning documentation.
-Claude Code infrastructure has been set up: CLAUDE.md, session protocol, skills,
-commands, hooks, security tooling, and 7 ADRs are now in place.
+This is the bootstrap session. No lakehouse code exists yet — only planning docs.
+Claude Code infrastructure is fully set up: CLAUDE.md, session protocol, skills,
+commands (verified working after VS Code reload), hooks, security tooling, and 7 ADRs.
+Git repo initialized on `main`, two commits made, detect-secrets baseline established.
 The repo is ready for Session 1: implement repo scaffold + FHIR parser foundation.
 
 ---
@@ -17,10 +18,12 @@ The repo is ready for Session 1: implement repo scaffold + FHIR parser foundatio
 
 **Working:**
 - Claude Code configuration complete (.claude/skills, commands, rules, hooks)
+- Slash commands verified working (/session-end, /session-start, /new-transform, /new-adr)
 - Global ~/.claude/CLAUDE.md and security deny rules in place
 - ~/claude-os/ skill library created (7 skills, templates, init.sh)
 - docs/adr/ created with ADRs 001-007
-- Pre-commit security toolchain configured
+- Git initialized on main branch (2 commits), detect-secrets baseline committed
+- Pre-commit configured; PreToolUse scan-secrets.sh hook active
 
 **In progress:**
 - Nothing — clean slate, ready for Session 1
@@ -28,6 +31,12 @@ The repo is ready for Session 1: implement repo scaffold + FHIR parser foundatio
 **Blocked:**
 - Fabric workspace creation (manual step — do first on Friday night)
 - S3 shortcut setup in Fabric UI (manual — requires workspace to exist)
+
+**Known caveat:**
+- `pre-commit install` (auto git-hook) conflicts with Claude Code's global
+  core.hooksPath. Workflow: run `pre-commit run --all-files` manually before
+  commits, OR rely on CI (ci.yml, Session 5). scan-secrets.sh hook still fires
+  automatically on every Write via .claude/settings.json PreToolUse.
 
 ---
 
@@ -58,10 +67,12 @@ No tests yet — repo scaffold not yet created.
 ## Key state
 ```
 LAKEHOUSE_PLATFORM=local_lite (default until Fabric workspace created)
+Git branch: main (2 commits: setup + secrets baseline)
 Fabric workspace: NOT YET CREATED
 S3 shortcut: NOT YET CONFIGURED
 Silver tables written: none
 Gold tables written: none
+Tests: 0 (no tests/ directory yet)
 Fabric trial: ~15 days remaining as of 2026-05-27
 M5 Max: arriving ~June 2, 2026
 ```

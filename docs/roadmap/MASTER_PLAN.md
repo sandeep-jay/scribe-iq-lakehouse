@@ -1,6 +1,6 @@
 # Master Execution Plan
-**Owner:** Sandeep Jayaprakash  
-**Last updated:** May 2026  
+**Owner:** Sandeep Jayaprakash
+**Last updated:** May 2026
 **Status:** READY FOR EXECUTION
 
 ---
@@ -42,31 +42,31 @@ M5 Max 128GB                Available June 2, 2026
 ## What Ships This Weekend
 
 ### 1. `fabric-lakehouse-hls-readmission`
-**Work:** README polish, docs cleanup, push public  
-**Effort:** 1-2 hours Friday night  
+**Work:** README polish, docs cleanup, push public
+**Effort:** 1-2 hours Friday night
 **Goal:** Existing work made reviewable
 
 ### 2. `scribe-iq-lakehouse`
-**Work:** Fabric Bronze + Silver FHIR pipeline, Gold encounter_summary  
-**Scale:** All 1,500 Synthea Coherent patients  
-**Effort:** Saturday + Sunday  
+**Work:** Fabric Bronze + Silver FHIR pipeline, Gold encounter_summary
+**Scale:** All 1,500 Synthea Coherent patients
+**Effort:** Saturday + Sunday
 **Goal:** Medallion running, screenshots captured, trial evidence preserved
 
 ### 3. `clinical-bert-pipeline`
-**Work:** Full MLOps harness — train, serve, demo  
-**Data:** Synthea SOAP notes (from lakehouse Silver) + MTSamples  
-**Effort:** Saturday (trains overnight background)  
+**Work:** Full MLOps harness — train, serve, demo
+**Data:** Synthea SOAP notes (from lakehouse Silver) + MTSamples
+**Effort:** Saturday (trains overnight background)
 **Goal:** Ships complete Sunday — end-to-end MLOps, Streamlit demo live
 
 ### 4. Ollama Generation (inside scribe-iq-lakehouse)
-**Work:** Pipeline working end-to-end  
-**Scale:** 200 notes from 1,500-patient cohort (stratified sample)  
-**Runtime:** ~2.5 hours — runs Sunday afternoon  
+**Work:** Pipeline working end-to-end
+**Scale:** 200 notes from 1,500-patient cohort (stratified sample)
+**Runtime:** ~2.5 hours — runs Sunday afternoon
 **Goal:** Pipeline complete, 200 notes generated, quality validated
 
 ### 5. `scribe-iq`
-**Work:** README update only — honest corpus status + roadmap  
-**Effort:** 30 minutes  
+**Work:** README update only — honest corpus status + roadmap
+**Effort:** 30 minutes
 **Goal:** Narrative updated, no new features
 
 ---
@@ -236,6 +236,6 @@ See: [scribe-iq-lakehouse](../scribe-iq-lakehouse)
 
 ---
 
-*Document version: 1.0 — May 2026*  
-*Status: READY FOR EXECUTION*  
+*Document version: 1.0 — May 2026*
+*Status: READY FOR EXECUTION*
 *Start: Friday night with fabric-lakehouse-hls polish*

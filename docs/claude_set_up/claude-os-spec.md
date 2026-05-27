@@ -1,8 +1,8 @@
 # claude-os — Personal Claude Code Operating System
 
-**Repo:** `sandeep-jay/claude-os` (private)  
-**Purpose:** Generic Claude Code foundation pulled into any project.  
-**Pattern:** Global defaults + skill library + project templates.  
+**Repo:** `sandeep-jay/claude-os` (private)
+**Purpose:** Generic Claude Code foundation pulled into any project.
+**Pattern:** Global defaults + skill library + project templates.
 **Usage:** Pull, run init script, customize project CLAUDE.md.
 
 ---
@@ -289,7 +289,7 @@ Keep a Changelog standard: https://keepachangelog.com/en/1.0.0/
 
 ## [Unreleased]
 ### Added
-### Changed  
+### Changed
 ### Fixed
 ### Removed
 
@@ -1009,7 +1009,7 @@ done
 echo ""
 echo "Done. Next steps:"
 echo "  1. Edit CLAUDE.md — fill in {PLACEHOLDERS}"
-echo "  2. Add project-specific non-negotiables"  
+echo "  2. Add project-specific non-negotiables"
 echo "  3. Run: git add CLAUDE.md HANDOFF.md CHANGELOG.md docs/"
 echo "  4. Start Claude Code session: 'Read HANDOFF.md and begin'"
 ```
@@ -1089,7 +1089,7 @@ See docs/SPEC.md section 15.2 for full checklist.
 
 ---
 
-# SKILL: ADR Practice  
+# SKILL: ADR Practice
 [paste skills/adr.md content here]
 
 ---
@@ -1277,7 +1277,7 @@ The repo grows with you. Every project adds to it.
 
 ---
 
-*Document version: 1.0 — May 2026*  
-*Status: READY FOR EXECUTION*  
-*Create repo: sandeep-jay/claude-os (private)*  
+*Document version: 1.0 — May 2026*
+*Status: READY FOR EXECUTION*
+*Create repo: sandeep-jay/claude-os (private)*
 *Run init.sh for each project before first Claude Code session*

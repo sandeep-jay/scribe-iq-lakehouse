@@ -1,8 +1,8 @@
 # Clinical BERT MLOps Pipeline — Project Spec
 
-**Portfolio project:** Sandeep Jayaprakash  
-**Status:** Implementation-ready  
-**Planned implementation:** Claude Code  
+**Portfolio project:** Sandeep Jayaprakash
+**Status:** Implementation-ready
+**Planned implementation:** Claude Code
 **Weekend target:** End-to-end pipeline running, Streamlit demo live
 
 ---
@@ -677,7 +677,7 @@ see a coherent system, not two disconnected demos.
 
 ---
 
-*Document version: 1.0 — May 2026*  
+*Document version: 1.0 — May 2026*
 *Status: Ready for implementation via Claude Code*
 
 ---
@@ -977,7 +977,7 @@ Upgrade to multi-source after Silver ready — 90 min retrain.
 
 ---
 
-*Document version: 3.0 — May 2026*  
-*Final: multi-source training (SOAP + MTSamples), lakehouse dependency,*  
-*fallback to MTSamples-only if Silver not ready, locked weekend plan*  
+*Document version: 3.0 — May 2026*
+*Final: multi-source training (SOAP + MTSamples), lakehouse dependency,*
+*fallback to MTSamples-only if Silver not ready, locked weekend plan*
 *Status: READY FOR EXECUTION*

@@ -4,6 +4,15 @@ All notable changes to scribe-iq-lakehouse.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
+### Added
+- Git repository initialized on main branch
+- detect-secrets baseline (.secrets.baseline) committed
+- pre-commit + detect-secrets installed locally
+### Changed
+- end-of-file-fixer normalized trailing newlines across .claude/ files
+### Notes
+- pre-commit auto-install conflicts with Claude Code global core.hooksPath;
+  use `pre-commit run --all-files` manually or rely on CI. See HANDOFF.md caveat.
 
 ## [0.1.0] — 2026-05-27
 ### Added
