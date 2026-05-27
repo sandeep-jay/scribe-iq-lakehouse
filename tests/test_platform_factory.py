@@ -1,14 +1,14 @@
 """Tests for the platform abstraction factory and base contract (ADR-002).
 
-Concrete platform classes (fabric, local_lite, ...) are implemented from Session 2
-onward. Until then the factory's contract is what we can pin down: it routes by the
-LAKEHOUSE_PLATFORM env var, rejects unknown names, and surfaces a clear ImportError
-for registered-but-not-yet-built platforms.
+``local_lite`` is implemented (Session 2); the cloud platforms (fabric, databricks,
+aws, gcp, local_spark) are still stubs, so requesting them raises ImportError. The
+factory's job is to route by the LAKEHOUSE_PLATFORM env var and reject unknown names.
 """
 
 import pytest
 
 from local.platform import base, factory
+from local.platform.local_lite import LocalLitePlatform
 
 
 def test_unknown_platform_raises_value_error():
@@ -16,12 +16,17 @@ def test_unknown_platform_raises_value_error():
         factory.get_platform("does-not-exist")
 
 
-def test_env_var_overridden_by_explicit_arg(monkeypatch):
-    monkeypatch.setenv(factory.ENV_VAR, "fabric")
-    # Explicit arg wins over env var; both are unimplemented, so ImportError, not
-    # AttributeError — proving the module path was resolved from the arg.
+def test_explicit_arg_overrides_env_var(monkeypatch):
+    # Env says local_lite, but the explicit arg (fabric, not yet built) wins —
+    # the ImportError proves the module path was resolved from the arg, not the env.
+    monkeypatch.setenv(factory.ENV_VAR, "local_lite")
     with pytest.raises(ImportError):
-        factory.get_platform("local_lite")
+        factory.get_platform("fabric")
+
+
+def test_unbuilt_platform_raises_import_error():
+    with pytest.raises(ImportError):
+        factory.get_platform("databricks")
 
 
 def test_registered_platforms_present():
@@ -37,9 +42,7 @@ def test_registered_platforms_present():
 
 def test_default_platform_is_local_lite(monkeypatch):
     monkeypatch.delenv(factory.ENV_VAR, raising=False)
-    # Default resolves to local_lite, which is not built yet -> ImportError on import.
-    with pytest.raises(ImportError):
-        factory.get_platform()
+    assert isinstance(factory.get_platform(), LocalLitePlatform)
 
 
 def test_base_validate_layer():

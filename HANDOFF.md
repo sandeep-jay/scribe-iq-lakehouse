@@ -1,4 +1,4 @@
-# HANDOFF — Session 1
+# HANDOFF — Session 2
 **Date:** 2026-05-27
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
@@ -6,57 +6,63 @@
 ---
 
 ## Session summary
-Built the repo scaffold and the FHIR parser foundation. `local/transforms/fhir_parser.py`
-extracts every resource type (patient, encounter, condition, observation, medication,
-procedure, SOAP note, ECG, imaging, genomic) from Synthea Coherent bundles, and the
-platform abstraction layer (`base.py` + `factory.py`) is in place. 43 tests pass; the
-parser was validated against a real Coherent bundle before crafting the synthetic fixture.
+Built the full local Bronze→Silver pipeline and ran it on the **entire** Synthea Coherent
+FHIR dataset (1,280 files / 4.6 GB). All 10 Silver Delta tables materialized in 2m30s on
+the M1 Max with CDC enabled and every validation passing. Added the `LocalLitePlatform`
+(Polars + delta-rs), 7 silver transforms, validation layer, ingest + streaming-sim, and
+36 new tests (79 total). Work runs in a `.venv` per the user's request.
 
 ---
 
 ## Current state
 
 **Working:**
-- Repo scaffold per spec §4: pyproject.toml, requirements.txt, `local/` package tree,
-  `tests/`, README stub
-- `local/platform/base.py` — `LakehousePlatform` ABC (ADR-002)
-- `local/platform/factory.py` — `LAKEHOUSE_PLATFORM` env router (default `local_lite`)
-- `local/transforms/fhir_parser.py` — `FHIRBundleParser`, all `extract_*` methods,
-  `strip_reference`, SOAP section detection, negation-aware pathogenic detection
-- `tests/fixtures/sample_bundle.json` — synthetic 17-resource bundle (all types)
-- 43 tests pass (`test_fhir_parser`, `test_silver_soap_notes`, `test_platform_factory`)
-- ruff clean, black formatted
-- ADR-008 written (dict-based parsing decision)
+- `.venv` with full `[local,dev]` extras (polars 1.41, deltalake 1.6, duckdb 1.5, pydicom 3)
+- `local/ingest/download.py` — parallel S3 sync + round-robin cohort partition + manifest
+- `local/platform/local_lite.py` — `LocalLitePlatform`: delta-rs write/read, CDC, MERGE upsert
+- `local/transforms/` — `schema_utils.py`, 7 `silver_*` modules, `registry.py` (10 tables)
+- `local/validation/` — `schema_registry.py` + `validate.py` → `silver.ingest_log`
+- `local/ingest/bronze_landing.py` + `streaming_sim.py` (cohort replay + watchdog)
+- `local/pipeline.py` — per-cohort micro-batch orchestration (`python -m local.pipeline`)
+- 79 tests passing; ruff clean; black formatted
+- ADR-008 (dict parsing) + ADR-009 (local Silver materialization)
+- **Full dataset processed → Silver Delta tables on disk under `data/silver/` (gitignored)**
+
+**Silver row counts (full run, all validations passed):**
+```
+patient             1,278     encounter         143,946
+condition          15,956     observation       669,898
+medication_request 209,401    procedure          56,092
+soap_note         143,946     ecg_metadata            0
+imaging_study       3,752     genomic_report        419
+```
 
 **In progress:**
-- Nothing — Session 1 scope complete, ready for Session 2
+- Nothing — Session 2 complete, ready for Session 3 (Gold layer)
 
 **Blocked:**
-- Fabric workspace creation (manual — do before Session 4)
-- S3 shortcut setup in Fabric UI (manual — requires workspace)
+- Fabric workspace + S3 shortcut (manual; needed for Session 4, ~13 days of trial left)
 
-**Known caveats / discoveries (important for Session 2+):**
-- Coherent SOAP notes use **Markdown clinical headers** ("# Chief Complaint", "# Assessment
-  and Plan"), NOT literal "SUBJECTIVE:/OBJECTIVE:" markers. The parser maps both. Notes
-  lack an Objective section, so `has_objective` is honestly `False` for most notes.
-- SOAP text is Base64 **inline** in `DocumentReference.content[].attachment.data` — there is
-  usually no separate `Binary` resource (parser supports both paths). See ADR-005/ADR-008.
-- References are `urn:uuid:<id>`; practitioners are referenced by identifier query, so
-  `provider_id` can look like `us-npi|9999999799`. Acceptable for now.
-- Genomics + ECG DiagnosticReports were absent from the inspected bundle; the genomic VCFs
-  live in the S3 `dna/` prefix and DICOM in the `dicom/` prefix (separate from FHIR).
-  Fixture includes synthetic ECG + genomic reports so both code paths are tested.
-- `fhir.resources` and `pydicom` are NOT installed locally; parser is dict-based (no
-  fhir.resources needed) and pydicom is lazy-imported only in `_extract_dicom_headers`.
+**Discoveries / caveats (carry into Session 3+):**
+- The FHIR prefix has 2 non-patient reference files (`organizations.json`,
+  `practitioners.json`) → 1,278 real patients out of 1,280 files. They parse to empty
+  patient/encounter rows, harmlessly.
+- `ecg_metadata = 0`: Coherent has NO ECG DiagnosticReports in FHIR (ECG is Binary
+  waveform data, roadmap Phase 3). The table is created empty; min_rows=0 in validation.
+- `genomic_report = 419`: genomic DiagnosticReports DO exist in the FHIR (more than the
+  single inspected bundle implied). `data_limitation` 100% populated; 0 pathogenic (synthetic).
+- `soap_note == encounter` count (143,946): ~one SOAP note per encounter. Notes use
+  Markdown headers, no Objective section — validation checks S/A/P only (ADR-005/009).
+- Observation BP components stored as `components_json` string (ADR-009) — Gold must parse it.
+- delta-rs MERGE at full scale is fine (2m30s end-to-end); no perf concerns at this size.
 
 ---
 
 ## Test status
 ```
-43 passed in ~0.3s
-  tests/test_fhir_parser.py        (parser: all extract_* + strip_reference)
-  tests/test_silver_soap_notes.py  (Base64 decode, S/O/A/P detection, both attach paths)
-  tests/test_platform_factory.py   (env routing, layer validation)
+79 passed (venv: .venv/bin/python -m pytest)
+  fhir_parser, silver_soap_notes, platform_factory   (Session 1)
+  schema_utils, silver_transforms, local_lite, validate (Session 2)
 ruff: All checks passed   |   black: formatted
 ```
 
@@ -64,12 +70,13 @@ ruff: All checks passed   |   black: formatted
 
 ## Next session — start here
 
-**First task:** `local/ingest/download.py` — S3 sync (`--no-sign-request`) with cohort
-partitioning into `data/bronze/fhir/cohort=A|B|C/`, then `local/transforms/silver_*.py`
-modules that turn parsed records into `pa.Table` (ADR-004), plus `local/validation/`.
-**Read first:** spec §5.1 (Bronze), §5.2 (streaming sim), §5.4 (Silver schemas), §5.6 (validation)
-**Decision needed:** Confirm dev cohort size (see Open decisions) before the first full
-local run.
+**First task:** Gold layer — `local/gold/encounter_summary.py` (denormalize Silver →
+`gold.encounter_summary` per spec §5.4 corpus schema) and `local/gold/corpus_manifest.py`
+(lineage). Then `schemas/` JSON Schemas, `docs/CORPUS_CONTRACT.md`, and
+`tests/test_gold_encounter_summary.py`. Read Silver via `platform.read_silver(...)`.
+**Read first:** spec §5.4 (gold.encounter_summary cols + imaging struct), §5.7 (corpus contract)
+**Watch out:** age-at-encounter calc (healthcare skill), parse `components_json` for vitals,
+null-safe joins (most encounters have no imaging/genomic).
 
 ---
 
@@ -77,38 +84,38 @@ local run.
 
 | Decision | Options | Recommendation | Status |
 |----------|---------|----------------|--------|
-| Fabric Bronze ingestion | S3 Shortcut vs Copy Pipeline | S3 Shortcut (zero-copy) | Deferred to Session 4 |
-| Dev cohort size | 5 / 20 / 50 patients | 20 patients for local + Fabric dev runs | Open — decide Session 2 |
-| Silver transform return | Build Arrow schemas now vs infer | Explicit pa.schema per table (ADR-004) | Decide Session 2 |
+| Gold engine | local (Polars/DuckDB join) vs Fabric | Local now; Fabric mirrors later | Lean local for Session 3 |
+| Gold join key | encounter-level vs patient-level grain | encounter_summary = one row per encounter | Per spec §5.4 |
+| ECG/genomic in Gold | include sparse/empty flags | has_ecg=false always; has_genomics where present | Decide Session 3 |
 
 ---
 
 ## Key state
 ```
-LAKEHOUSE_PLATFORM=local_lite (default; concrete platforms not built until Session 2)
-Git branch: main
-Source data: s3://synthea-open-data/coherent/unzipped/fhir/ — 1,281 bundles (1–12 MB each)
-Local scratch: data/bronze/fhir/sample_real.json (gitignored — Al123 bundle, 815 KB)
-Tests: 43 passing
-Silver/Gold tables written: none (transforms produce dicts; Arrow writers are Session 2)
-Fabric workspace: NOT YET CREATED
-Fabric trial: ~14 days remaining as of 2026-05-27
+LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform implemented
+Storage root: data/ (gitignored) — bronze/fhir/cohort=A|B|C + silver/<10 tables> + ingest_log
+Bronze: 1,280 raw JSON bundles, 4.6 GB, manifest at data/bronze/_metadata/manifest.json
+Silver: 10 Delta tables + ingest_log, CDC enabled, all validations passed
+Gold: none yet (Session 3)
+Tests: 79 passing
+Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
 
 ---
 
 ## Files changed this session
-- pyproject.toml, requirements.txt, README.md — created
-- local/__init__.py + platform/transforms/ingest/gold/validation/__init__.py — created
-- local/platform/base.py, local/platform/factory.py — created
-- local/transforms/fhir_parser.py — created (core deliverable)
-- tests/__init__.py, tests/conftest.py — created
-- tests/fixtures/sample_bundle.json — created (synthetic, 17 resources)
-- tests/test_fhir_parser.py, test_silver_soap_notes.py, test_platform_factory.py — created
-- docs/adr/008-dict-based-fhir-parsing.md — created; docs/adr/README.md — index updated
-- CHANGELOG.md — updated
-- .claude/settings.json — permission allowlist extended (aws s3, ruff, black) by harness
+- pyproject/requirements already present; `.venv/` created (gitignored)
+- local/ingest/{download,bronze_landing,streaming_sim}.py — created
+- local/platform/local_lite.py — created
+- local/transforms/{schema_utils,registry,silver_patient,silver_encounter,silver_clinical,
+  silver_soap_notes,silver_ecg,silver_imaging,silver_genomics}.py — created
+- local/validation/{schema_registry,validate}.py — created
+- local/pipeline.py — created
+- tests/{test_schema_utils,test_silver_transforms,test_local_lite,test_validate}.py — created
+- tests/test_platform_factory.py — updated (local_lite now implemented)
+- docs/adr/009-local-silver-materialization.md — created; docs/adr/README.md — index updated
+- CHANGELOG.md — Session 2 section added
 
 ## ADRs written this session
-- ADR-008: Dict-based FHIR parsing (not fhir.resources models)
+- ADR-009: Local Silver materialization — delta-rs, type coercion, component JSON

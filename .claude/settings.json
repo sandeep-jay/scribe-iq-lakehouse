@@ -26,7 +26,20 @@
       "Bash(python3 -m ruff check --fix local tests)",
       "Bash(python3 -m ruff check local tests)",
       "Bash(python3 -m black --check local tests)",
-      "Bash(python3 -m black local tests)"
+      "Bash(python3 -m black local tests)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/python -m pip install --quiet --upgrade pip)",
+      "Bash(.venv/bin/python -m pip install --quiet -e \".[local,dev]\")",
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(.venv/bin/python -)",
+      "Bash(.venv/bin/python -m pytest -q)",
+      "Bash(.venv/bin/python -m local.ingest.download --bronze-root data/bronze)",
+      "Bash(awk '{print \"size so far:\", $1}')",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -m ruff check --fix local tests)",
+      "Bash(.venv/bin/python -m ruff check local tests)",
+      "Bash(.venv/bin/python -m black local tests)",
+      "Bash(time .venv/bin/python -m local.pipeline --bronze-root data/bronze)"
     ],
     "deny": [
       "Bash(aws configure*)",

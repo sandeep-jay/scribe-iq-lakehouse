@@ -4,7 +4,35 @@ All notable changes to scribe-iq-lakehouse.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
-### Added
+
+### Session 2 — Local Bronze + Silver pipeline (full dataset)
+#### Added
+- `local/ingest/download.py`: parallel `aws s3 sync` (no-sign-request) + round-robin
+  cohort partitioning (A/B/C) + ingest manifest
+- `local/platform/local_lite.py`: `LocalLitePlatform` (Polars + delta-rs) — Delta
+  write/read, CDC enabled on create, MERGE-upsert on primary key
+- `local/transforms/schema_utils.py`: field-type-driven Arrow coercion (UTC timestamps,
+  date32, string codes) + dedup
+- `local/transforms/silver_{patient,encounter,clinical,soap_notes,ecg,imaging,genomics}.py`
+  and `registry.py` — all 10 Silver tables with explicit Arrow schemas (ADR-004)
+- `local/validation/{schema_registry,validate}.py`: per-table quality checks →
+  `silver.ingest_log`
+- `local/ingest/{bronze_landing,streaming_sim}.py`: cohort inventory + Auto Loader replay sim
+- `local/pipeline.py`: per-cohort micro-batch Bronze→Silver orchestration
+- 36 new tests (schema_utils, silver transforms, local_lite Delta round-trip, validation) —
+  79 total, all passing
+- ADR-009: Local Silver materialization (delta-rs, type coercion, component JSON)
+- venv + full `[local,dev]` extras (polars, deltalake, duckdb, watchdog, pydicom)
+#### Results
+- Full run: 1,280 files (1,278 patients + `organizations.json` + `practitioners.json`)
+  → all 10 Silver Delta tables in **2m30s** on M1 Max, all validations passed.
+  Row counts: encounter 143,946 · observation 669,898 · medication_request 209,401 ·
+  procedure 56,092 · soap_note 143,946 · condition 15,956 · imaging_study 3,752 ·
+  genomic_report 419 · patient 1,278 · ecg_metadata 0 (ECG is Binary waveform, not FHIR).
+- CDC (`delta.enableChangeDataFeed`) enabled on every Silver table.
+
+### Session 1 — Repo scaffold + FHIR parser
+#### Added
 - Repo scaffold per spec §4: `pyproject.toml`, `requirements.txt`, `local/` package
   tree (`platform`, `transforms`, `ingest`, `gold`, `validation`), `tests/`, README stub
 - `local/platform/base.py`: `LakehousePlatform` abstract interface (ADR-002)
