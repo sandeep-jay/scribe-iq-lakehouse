@@ -9,3 +9,4 @@
 | 005 | FHIR Binary Base64 decode for SOAP notes | Accepted | 2026-05-27 |
 | 006 | DICOM stop_before_pixels metadata extraction | Accepted | 2026-05-27 |
 | 007 | Genomic data_limitation as first-class column | Accepted | 2026-05-27 |
+| 008 | Dict-based FHIR parsing (not fhir.resources models) | Accepted | 2026-05-27 |

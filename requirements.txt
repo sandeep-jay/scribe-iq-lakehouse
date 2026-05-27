@@ -1,0 +1,16 @@
+# Core transform + parsing dependencies (engine-agnostic).
+# Pinned ranges, not exact, to stay portable across Fabric / local tiers.
+pyarrow>=15.0
+pydicom>=2.4
+python-dateutil>=2.9
+
+# Local lite tier (delta-rs mirror) — used from Session 2 onward.
+# polars>=1.0
+# deltalake>=0.18
+# duckdb>=1.0
+# watchdog>=4.0
+
+# Dev tooling.
+pytest>=8.0
+ruff>=0.5
+black>=24.0

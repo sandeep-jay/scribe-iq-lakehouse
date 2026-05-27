@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scribe-iq-lakehouse"
+version = "0.1.0"
+description = "Production-pattern healthcare data lakehouse on Synthea Coherent (Fabric medallion: Bronze -> Silver -> Gold)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Sandeep Jayaprakash" }]
+
+dependencies = [
+    "pyarrow>=15.0",
+    "pydicom>=2.4",
+    "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+# Local lite tier (delta-rs mirror) — built in later sessions.
+local = [
+    "polars>=1.0",
+    "deltalake>=0.18",
+    "duckdb>=1.0",
+    "watchdog>=4.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "black>=24.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["local*"]
+
+[tool.pytest.ini_options]
+# Make `local` importable without an editable install, and keep tests fast/quiet.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "D"]
+# D203/D213 conflict with D211/D212 — pick the Google-style set.
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests don't need module/function docstrings.
+"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]

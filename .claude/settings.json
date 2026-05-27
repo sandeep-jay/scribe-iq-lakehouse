@@ -17,7 +17,16 @@
       "Bash(ls *)",
       "Bash(mkdir -p *)",
       "Bash(chmod +x *)",
-      "Bash(detect-secrets scan*)"
+      "Bash(detect-secrets scan*)",
+      "Bash(aws s3 *)",
+      "Bash(awk '{print $5}')",
+      "Bash(git check-ignore *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3)",
+      "Bash(python3 -m ruff check --fix local tests)",
+      "Bash(python3 -m ruff check local tests)",
+      "Bash(python3 -m black --check local tests)",
+      "Bash(python3 -m black local tests)"
     ],
     "deny": [
       "Bash(aws configure*)",

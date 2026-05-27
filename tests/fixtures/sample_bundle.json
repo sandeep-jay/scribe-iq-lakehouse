@@ -1,0 +1,593 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "id": "sample-synthetic-bundle",
+  "_note": "SYNTHETIC test fixture \u2014 not real patient data. Hand-built to exercise FHIRBundleParser.",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:patient-synthetic-001",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-synthetic-001",
+        "birthDate": "1980-07-15",
+        "gender": "female",
+        "extension": [
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "code": "2106-3",
+                  "display": "White"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "White"
+              }
+            ]
+          },
+          {
+            "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+            "extension": [
+              {
+                "url": "ombCategory",
+                "valueCoding": {
+                  "code": "2135-2",
+                  "display": "Hispanic or Latino"
+                }
+              },
+              {
+                "url": "text",
+                "valueString": "Hispanic or Latino"
+              }
+            ]
+          }
+        ],
+        "address": [
+          {
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02118"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:encounter-001",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "encounter-001",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "185349003",
+                "display": "Encounter for check up (procedure)"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "period": {
+          "start": "2021-03-15T09:00:00-04:00",
+          "end": "2021-03-15T09:30:00-04:00"
+        },
+        "participant": [
+          {
+            "individual": {
+              "reference": "Practitioner/prov-001"
+            }
+          }
+        ],
+        "reasonCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "162864005",
+                "display": "Body mass index 30+ - obesity (finding)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:encounter-002",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "encounter-002",
+        "status": "finished",
+        "class": {
+          "code": "AMB"
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "period": {
+          "start": "2021-06-01T10:00:00-04:00"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:condition-001",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "condition-001",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "code": "confirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "59621000",
+              "display": "Essential hypertension (disorder)"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "onsetDateTime": "2019-01-01T00:00:00-05:00",
+        "recordedDate": "2019-01-02T00:00:00-05:00"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:obs-vital-hr",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-vital-hr",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "code": "vital-signs",
+                "display": "vital-signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "effectiveDateTime": "2021-03-15T09:10:00-04:00",
+        "valueQuantity": {
+          "value": 72,
+          "unit": "/min",
+          "code": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:obs-bp",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bp",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "code": "vital-signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood Pressure"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "effectiveDateTime": "2021-03-15T09:10:00-04:00",
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic Blood Pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 154,
+              "unit": "mm[Hg]"
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic Blood Pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 85,
+              "unit": "mm[Hg]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:obs-lab-glucose",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-lab-glucose",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "code": "laboratory",
+                "display": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2339-0",
+              "display": "Glucose"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "effectiveDateTime": "2021-03-15T09:12:00-04:00",
+        "valueQuantity": {
+          "value": 95,
+          "unit": "mg/dL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:medreq-001",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "medreq-001",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+              "code": "243670",
+              "display": "Aspirin 81 MG Oral Tablet"
+            }
+          ],
+          "text": "Aspirin 81 MG Oral Tablet"
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "authoredOn": "2021-03-15T09:20:00-04:00",
+        "dosageInstruction": [
+          {
+            "text": "Take 1 tablet daily"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:procedure-001",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "procedure-001",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "5880005",
+              "display": "Blood pressure taking (procedure)"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "performedPeriod": {
+          "start": "2021-03-15T09:05:00-04:00",
+          "end": "2021-03-15T09:06:00-04:00"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-001",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "docref-001",
+        "status": "current",
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "date": "2021-03-15T09:30:00-04:00",
+        "context": {
+          "encounter": [
+            {
+              "reference": "urn:uuid:encounter-001"
+            }
+          ]
+        },
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain",
+              "data": "U1VCSkVDVElWRToKUGF0aWVudCByZXBvcnRzIGludGVybWl0dGVudCBjaGVzdCBkaXNjb21mb3J0IG92ZXIgdGhlIHBhc3Qgd2Vlay4KCk9CSkVDVElWRToKQlAgMTU0Lzg1IG1tSGcsIEhSIDc4IGJwbS4gTHVuZ3MgY2xlYXIgdG8gYXVzY3VsdGF0aW9uLgoKQVNTRVNTTUVOVDoKU3RhYmxlIGFuZ2luYSwgd2VsbCBjb250cm9sbGVkLgoKUExBTjoKU3RhcnQgbG93LWRvc2UgYXNwaXJpbi4gRm9sbG93IHVwIGluIHR3byB3ZWVrcy4K"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-002",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "docref-002",
+        "status": "current",
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "date": "2021-06-01T10:30:00-04:00",
+        "context": {
+          "encounter": [
+            {
+              "reference": "urn:uuid:encounter-002"
+            }
+          ]
+        },
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain",
+              "url": "urn:uuid:binary-002"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:binary-002",
+      "resource": {
+        "resourceType": "Binary",
+        "id": "binary-002",
+        "contentType": "text/plain",
+        "data": "CjIwMjEtMDMtMTUKCiMgQ2hpZWYgQ29tcGxhaW50Ci0gUGVyc2lzdGVudCBjb3VnaAoKIyBIaXN0b3J5IG9mIFByZXNlbnQgSWxsbmVzcwpTeW50aGV0aWMgVGVzdHBhdGllbnQgaXMgYSA0MCB5ZWFyLW9sZCBoaXNwYW5pYyB3aGl0ZSBmZW1hbGUuCgojIEFsbGVyZ2llcwpObyBrbm93biBhbGxlcmdpZXMuCgojIE1lZGljYXRpb25zCk5vIGFjdGl2ZSBtZWRpY2F0aW9ucy4KCiMgQXNzZXNzbWVudCBhbmQgUGxhbgpWaXJhbCB1cHBlciByZXNwaXJhdG9yeSBpbmZlY3Rpb24uCgojIFBsYW4KUmVzdCwgZmx1aWRzLCBzeW1wdG9tYXRpYyBjYXJlLgo="
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ecg-001",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "ecg-001",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "LP29708-2",
+                "display": "Cardiology"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11524-6",
+              "display": "EKG study"
+            }
+          ],
+          "text": "Electrocardiogram"
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "effectiveDateTime": "2021-03-15T09:15:00-04:00",
+        "conclusion": "Normal sinus rhythm, no acute ischemic changes.",
+        "result": [
+          {
+            "reference": "urn:uuid:obs-ecg-hr"
+          },
+          {
+            "reference": "urn:uuid:obs-ecg-rhythm"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:obs-ecg-hr",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-ecg-hr",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "valueQuantity": {
+          "value": 78,
+          "unit": "/min"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:obs-ecg-rhythm",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-ecg-rhythm",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8893-1",
+              "display": "EKG rhythm"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "code": "NSR",
+              "display": "Normal sinus rhythm"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:genomic-001",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "genomic-001",
+        "status": "final",
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "55232-3",
+              "display": "Genetic analysis master panel"
+            }
+          ],
+          "text": "Genetic analysis panel"
+        },
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "effectiveDateTime": "2021-03-15T09:25:00-04:00",
+        "conclusion": "No pathogenic variants detected. Family history of type 2 diabetes noted.",
+        "presentedForm": [
+          {
+            "contentType": "application/octet-stream",
+            "url": "urn:uuid:binary-vcf-001"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:imaging-001",
+      "resource": {
+        "resourceType": "ImagingStudy",
+        "id": "imaging-001",
+        "status": "available",
+        "subject": {
+          "reference": "urn:uuid:patient-synthetic-001"
+        },
+        "encounter": {
+          "reference": "urn:uuid:encounter-001"
+        },
+        "started": "2021-03-15T09:40:00-04:00",
+        "numberOfSeries": 1,
+        "numberOfInstances": 1,
+        "series": [
+          {
+            "uid": "1.2.840.0000",
+            "number": 1,
+            "modality": {
+              "system": "http://dicom.nema.org",
+              "code": "MR",
+              "display": "Magnetic Resonance"
+            },
+            "numberOfInstances": 1,
+            "bodySite": {
+              "system": "http://snomed.info/sct",
+              "code": "12738006",
+              "display": "Brain structure"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
