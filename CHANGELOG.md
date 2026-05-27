@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Documentation — generated-first (ADR-011)
+#### Added
+- `scripts/gen_data_dictionary.py`: renders `docs/DATA_DICTIONARY.md` from the registry
+  schemas + validation rules (`--check` mode for CI); never hand-edited.
+- `docs/DATA_DICTIONARY.md`: generated — all 10 Silver tables + `ingest_log`.
+- `docs/ARCHITECTURE.md`: as-built view (Mermaid diagram + done-vs-planned status table),
+  distinct from the spec's intent.
+- `docs/BENCHMARKS.md`: real Session 2 run metrics (1,280 bundles → Silver in 2m30s,
+  per-table row counts) + engine comparison matrix.
+- `tests/test_docs_generated.py`: doc-as-test — fails if DATA_DICTIONARY is stale (86 total).
+- ADR-011: Generated-first documentation.
+#### Deferred
+- `docs/CORPUS_CONTRACT.md` + its schema-conformance test → built with the Gold layer
+  (a contract test is only meaningful once `gold.encounter_summary` exists).
+
 ### Post-Session-2 hardening
 #### Security
 - `local/redaction.py`: `redact()` → non-reversible `ref:<hash>` for identifier-bearing

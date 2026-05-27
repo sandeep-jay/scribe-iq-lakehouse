@@ -66,10 +66,11 @@ imaging_study       3,752     genomic_report        419
 
 ## Test status
 ```
-83 passed (venv: .venv/bin/python -m pytest)
+86 passed (venv: .venv/bin/python -m pytest)
   fhir_parser, silver_soap_notes, platform_factory      (Session 1)
   schema_utils, silver_transforms, local_lite, validate (Session 2)
   redaction                                             (post-S2 hardening)
+  docs_generated                                        (generated-first docs)
 ruff: All checks passed   |   black: formatted
 ```
 
@@ -85,6 +86,20 @@ ruff: All checks passed   |   black: formatted
 **Watch out:** age-at-encounter calc (healthcare skill), parse `components_json` for vitals,
 null-safe joins (most encounters have no imaging/genomic).
 
+**Documentation — "generated-first" (ADR-011, [[doc-strategy-generated-first]]):**
+DONE (this turn):
+- `docs/ARCHITECTURE.md` — as-built + Mermaid + done-vs-planned status table.
+- `scripts/gen_data_dictionary.py` → `docs/DATA_DICTIONARY.md` — generated from the
+  registry; `tests/test_docs_generated.py` fails if stale (`--check` for CI).
+- `docs/BENCHMARKS.md` — real Session 2 metrics + engine matrix.
+STILL TO DO with the Gold layer:
+- `docs/CORPUS_CONTRACT.md` **+ contract test** asserting the Gold schema matches the
+  contract (deferred — only meaningful once `gold.encounter_summary` exists).
+Deferred to Session 5 (synthesis): REVIEWER_GUIDE, full README, PRODUCTION_NOTES,
+STREAMING_DESIGN, MkDocs + mkdocstrings, screenshots.
+Guardrails in force: generate code-mirroring docs; ADRs immutable (supersede, don't edit);
+diagrams-as-code (Mermaid); verify contracts with tests.
+
 ---
 
 ## Open decisions
@@ -93,6 +108,7 @@ null-safe joins (most encounters have no imaging/genomic).
 |----------|---------|----------------|--------|
 | Gold engine | local (Polars/DuckDB join) vs Fabric | Local now; Fabric mirrors later | Lean local for Session 3 |
 | Gold join key | encounter-level vs patient-level grain | encounter_summary = one row per encounter | Per spec §5.4 |
+| Doc strategy | generated-first vs hand-written vs all-in-S5 | Generated-first (gen DATA_DICTIONARY, contract test, BENCHMARKS) | DECIDED 2026-05-27 |
 | ECG/genomic in Gold | include sparse/empty flags | has_ecg=false always; has_genomics where present | Decide Session 3 |
 
 ---
@@ -104,7 +120,8 @@ Storage root: data/ (gitignored) — bronze/fhir/cohort=A|B|C + silver/<10 table
 Bronze: 1,280 raw JSON bundles, 4.6 GB, manifest at data/bronze/_metadata/manifest.json
 Silver: 10 Delta tables + ingest_log, CDC enabled, all validations passed
 Gold: none yet (Session 3)
-Tests: 83 passing
+Docs: ARCHITECTURE.md, DATA_DICTIONARY.md (generated), BENCHMARKS.md live; CORPUS_CONTRACT pending Gold
+Tests: 86 passing
 Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
@@ -131,3 +148,10 @@ M5 Max: arriving ~June 2, 2026
 ## Post-Session-2 commits
 - `4cfeed9` fix(platform): redact patient identifiers from logs
 - `a66b362` chore(config): split Claude Code settings into shared + local
+- `f0e339e` docs: record PHI-safe logging + settings split across project docs
+- (pending) docs: generated-first doc set — ARCHITECTURE, DATA_DICTIONARY (generated),
+  BENCHMARKS, ADR-011, doc-as-test
+
+## ADRs (running list)
+- ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
+  ADR-011 generated-first docs
