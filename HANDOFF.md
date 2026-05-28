@@ -151,10 +151,10 @@ DuckDB notebook → duckdb docs/demo/notebooks/demo.duckdb -ui (20 SQL cells)
 ```
 
 **In progress:**
-- Nothing — Session 4 complete. Ready for Session 5 (Fabric notebooks).
+- Nothing — Session 4 committed as `8abdde2` (29 files, +2,668/−167). Ready for next session.
 
 **Blocked:**
-- Fabric workspace + S3 shortcut (manual; needed for Session 5, ~12 days of trial left).
+- Fabric workspace + S3 shortcut (manual; needed for Session 5, ~11 days of trial left).
 
 **Discoveries / caveats (carry forward):**
 - **Assets return `MaterializeResult`, the platform persists** (ADR-016) — slightly
@@ -235,22 +235,35 @@ duckdb docs/demo/notebooks/demo.duckdb -ui       # http://localhost:4213
 
 ## Next session — start here
 
-**First task (Session 5 — Fabric execution):** create the Fabric workspace + lakehouse and
-the S3 shortcut to `s3://synthea-open-data/coherent/`, then build the notebook sequence
-following the 8-cell template (`.claude/rules/notebooks.md`): `00_setup`,
-`01_bronze_ingest`, `05_silver_soap_notes` (demo centerpiece — MUST display a decoded SOAP
-note), `09_gold_encounter_summary`. Notebooks import the **same** pure transforms from
-`local/transforms/` and `local/gold/` — zero duplicate logic — now demonstrably the
-**third** execution surface (after the CLI and Dagster). **Capture screenshots as you go**
-(trial ~12 days; spec §15.2). **Read first:** spec §6 (notebook sequence),
-`.claude/rules/notebooks.md`, ADR-001 (Fabric-first).
+**Recommended first task (Session 5 — Fabric execution):** create the Fabric workspace +
+lakehouse and the S3 shortcut to `s3://synthea-open-data/coherent/`, then build the
+notebook sequence following the 8-cell template (`.claude/rules/notebooks.md`):
+`00_setup`, `01_bronze_ingest`, `05_silver_soap_notes` (demo centerpiece — MUST display
+a decoded SOAP note), `09_gold_encounter_summary`. Notebooks import the **same** pure
+transforms from `local/transforms/` and `local/gold/` — zero duplicate logic — now
+demonstrably the **third** execution surface (after the CLI and Dagster). **Capture
+screenshots as you go** (trial ~11 days; spec §15.2). **Read first:** spec §6 (notebook
+sequence), `.claude/rules/notebooks.md`, ADR-001 (Fabric-first).
 **Watch out:** `FabricPlatform` is registered in the factory but NOT implemented —
 implement it (Spark read/write + CDC + `table_version`/`write_gold_manifest`) before the
 notebooks run.
 
-**Stretch / alternative:** point Dagster's `LAKEHOUSE_PLATFORM` env var at the new
-`FabricPlatform` and demonstrate the same asset graph materializing into Fabric — that's
-the "three execution surfaces, one transform tier" payoff.
+**Time-pressure note:** Fabric is the only deadline-driven artifact (trial ~11 days). The
+Dagster + DuckDB demo artifacts are already permanent. If recording the portfolio video
+takes priority, that's also a valid next-session path — use `docs/demo/PLAYBOOK.md`.
+
+**Alternative paths if Fabric is blocked:**
+1. **Silver dedup fix** (Open Decision below) — eliminates the MERGE re-run failure mode
+   so Dagster backfill is idempotent. Real data-quality work; new ADR.
+2. **Record the portfolio video** following `docs/demo/PLAYBOOK.md` — 90 sec for LinkedIn,
+   3 min for portfolio site. The recording stage (DuckDB UI + Dagster + CLI walkthrough)
+   is all ready to go.
+3. **Wire `scribe-iq` to consume the corpus** — swap its 19-patient dev corpus for the
+   1,278-patient `gold.encounter_summary` (the consumer payoff).
+
+**Stretch:** point Dagster's `LAKEHOUSE_PLATFORM` env var at the new `FabricPlatform` and
+demonstrate the same asset graph materializing into Fabric — the "three execution
+surfaces, one transform tier" payoff.
 
 ---
 
@@ -264,23 +277,29 @@ the "three execution surfaces, one transform tier" payoff.
 | Dagster install extra | `[dev]` vs `[orchestration]` | `[orchestration]` (keep CI minimal) | DONE |
 | Run Dagster on Fabric? | yes vs local-only | Local-only — Fabric uses Data Factory | DONE — ADR-015 "Neutral" |
 | Fabric platform impl | Spark in FabricPlatform vs reuse local | Implement FabricPlatform I/O | Session 5 |
+| Silver parse-output deduplication | dedupe in `extract_*` vs `build_*` vs leave (clean-slate workaround) | Dedupe in `build_*` (single bottleneck; preserves extract simplicity) | OPEN — discovered Session 4 (MERGE re-run on populated tables fails: source dups × target dups → "matched a target row with multiple source rows"). Needs ADR-017 + the fix. |
+| Portfolio video timing | Record now vs after Fabric vs after dedup fix | Record now — demo artifacts are stable, won't get better by waiting | OPEN — `docs/demo/PLAYBOOK.md` ready when you are |
 
 ---
 
 ## Key state
 ```
 LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform implemented; Dagster uses it via PlatformResource
-Storage root: data/ (gitignored) — bronze/{fhir,dicom,csv} + silver/<10>+ingest_log + gold/{encounter_summary,_metadata}
+Storage root: data/ (gitignored) — bronze/{fhir,dicom,csv} + silver/<10> + gold/{encounter_summary,_metadata}
 Bronze: 1,280 FHIR bundles (4.6 GB) + 298 DICOM (.dcm, 9.3 GB) + 16 CSV (466 MB)
-Silver: 10 Delta tables + ingest_log (CDC, validation passing); now also Dagster asset checks
+Silver: 10 Delta tables (CDC, validation passing via @asset_check); ingest_log only on CLI builds
 Gold: encounter_summary (143,946 rows, as-of-date problem list) + corpus_manifest.json
-Orchestration: orchestration/ package — `dagster dev` renders the medallion asset graph
+Orchestration: orchestration/ — `dagster dev` (asset graph) ✓ live in this session, sensor proven
+Demo: scripts/demo_walkthrough.py (rich CLI) + docs/demo/notebooks/demo_notebook.sql (DuckDB)
+      + docs/demo/PLAYBOOK.md (recording guide). Shared renderers via local/preview.py.
 Docs: README, RUNBOOK, ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT (v1.1.0)
-Contract: v1.1.0 — unchanged this session (ADR-015 "Contract impact: none")
-Tests: 122 passing (+6 Dagster wiring tests, guarded by importorskip)
+Contract: v1.1.0 — unchanged this session (ADR-015/016 "Contract impact: none")
+Tests: 122 passing (+6 Dagster wiring, importorskip-guarded so [dev]-only installs stay clean)
 Full re-run (CLI path): rm -rf data/silver data/gold; python -m local.pipeline --with-gold
-Full re-run (Dagster path): backfill every cohort partition of bronze_fhir + silver_tables, then materialize gold_encounter_summary
-Fabric workspace: NOT YET CREATED  |  Fabric trial: ~12 days remaining
+Full re-run (Dagster path): wipe data/silver+gold first, then backfill every cohort partition
+                            of bronze_fhir + silver_tables, then materialize gold_encounter_summary
+Session 4 commit: 8abdde2 — feat(orchestration): Dagster medallion asset graph + demo surfaces
+Fabric workspace: NOT YET CREATED  |  Fabric trial: ~11 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
 
