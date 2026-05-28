@@ -20,3 +20,4 @@
 | 016 | Medallion as a Dagster software-defined asset graph | Accepted | 2026-05-27 |
 | 017 | Multi-platform repo layout — `core/` + per-platform domains | Accepted | 2026-05-28 |
 | 018 | Monorepo CI/CD — `core/` as a wheel, per-platform deploy workflows | Accepted | 2026-05-28 |
+| 019 | Silver MERGE idempotency — pre-merge target dedup guard | Accepted | 2026-05-28 |

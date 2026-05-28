@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from deltalake import DeltaTable, write_deltalake
 
 from core.platform.base import LakehousePlatform
@@ -34,6 +35,29 @@ _CDC_CONFIG = {"delta.enableChangeDataFeed": "true"}
 # is not necessarily the repo root; without this anchor, ``Path("data")`` would
 # resolve to a non-existent path inside that CWD.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _duplicate_row_count(table: pa.Table, key: str) -> int:
+    """Return total duplicate rows on ``key`` (rows minus distinct key values)."""
+    if table.num_rows == 0:
+        return 0
+    distinct = pc.count_distinct(table.column(key)).as_py()
+    return table.num_rows - distinct
+
+
+def _dedup_target(table: pa.Table, key: str) -> pa.Table:
+    """Drop duplicates on ``key``, keeping one deterministic survivor per key.
+
+    Used only on the target side before MERGE (ADR-019). Delta does not preserve
+    write order on read, so "last write wins" is undefined here — we keep the
+    row at the smallest read-order index per key (deterministic, but arbitrary).
+    Any caller that needs the *canonical* value for a key should provide it in
+    the MERGE source; the source-side row will overwrite the survivor.
+    """
+    indexed = table.append_column("_idx", pa.array(range(table.num_rows), type=pa.int64()))
+    grouped = indexed.group_by([key]).aggregate([("_idx", "min")])
+    mask = pc.is_in(indexed.column("_idx"), value_set=grouped.column("_idx_min"))
+    return indexed.filter(mask).drop_columns(["_idx"])
 
 
 class LocalLitePlatform(LakehousePlatform):
@@ -139,6 +163,25 @@ class LocalLitePlatform(LakehousePlatform):
             if key is None:
                 raise ValueError(f"No primary key registered for table {table!r}; cannot merge")
             dt = DeltaTable(path)
+
+            # ADR-019: legacy OVERWRITE writes (made before dedup_by_key landed
+            # in every build_silver_*) can leave duplicate primary keys in the
+            # target table. delta-rs MERGE then fails with "matched a target row
+            # with multiple source rows". Detect-and-rewrite the deduped target
+            # only when dups exist — happy path stays fast.
+            existing = dt.to_pyarrow_table()
+            dup_rows = _duplicate_row_count(existing, key)
+            if dup_rows > 0:
+                logger.warning(
+                    "Target table %r has %d duplicate %s rows; rewriting deduped before MERGE",
+                    table,
+                    dup_rows,
+                    key,
+                )
+                deduped = _dedup_target(existing, key)
+                write_deltalake(path, deduped, mode="overwrite", configuration=_CDC_CONFIG)
+                dt = DeltaTable(path)
+
             (
                 dt.merge(
                     source=data,
