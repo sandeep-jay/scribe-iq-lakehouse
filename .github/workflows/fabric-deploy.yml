@@ -29,8 +29,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[local,dev,orchestration]"
-          pip install build
+          pip install -e ".[local,dev,orchestration,fabric]"
+          pip install build fabric-cicd
 
       - name: Run fabric contract tests
         run: pytest fabric/tests/ -v
@@ -39,8 +39,7 @@ jobs:
         run: python -m build --wheel --outdir dist/
 
       - name: Upload wheel to Fabric Environment
-        # Implemented in Session 5 — fabric/deploy/upload_wheel.py is a stub today.
-        # Uses Service Principal credentials from the fabric-prod environment.
+        # Uses MSAL Service Principal auth + Fabric REST v1 (ADR-018, ADR-019).
         env:
           FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
           FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
@@ -55,5 +54,15 @@ jobs:
       # Notebook sync is handled by Fabric Git Integration (workspace-side),
       # not by this workflow. See fabric/docs/DEPLOYMENT.md.
 
-      - name: Smoke run (Session 5)
-        run: echo "Trigger Fabric pipeline smoke run — implemented in Session 5."
+      - name: Smoke run notebook 05 (decoded SOAP note)
+        # fabric-cicd triggers a one-shot run of the demo-centerpiece notebook;
+        # smoke_notebook + timeout come from fabric/deploy/fabric_cicd_config.yml.
+        env:
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
+        working-directory: fabric/deploy
+        run: |
+          fabric-cicd deploy --config fabric_cicd_config.yml
+          fabric-cicd smoke-run --config fabric_cicd_config.yml

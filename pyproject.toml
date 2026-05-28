@@ -38,6 +38,12 @@ orchestration = [
     "dagster>=1.8,<2.0",
     "dagster-webserver>=1.8,<2.0",
 ]
+# Fabric deploy helpers — only needed by CI / operators running fabric/deploy/
+# scripts. Fabric runtime itself ships pyspark/delta-spark/notebookutils.
+fabric = [
+    "msal>=1.28",
+    "requests>=2.31",
+]
 
 [tool.setuptools.packages.find]
 # `core/` is the platform-agnostic kernel (shared by every platform tier).
@@ -57,6 +63,9 @@ module_name = "core.orchestration.dagster.definitions"
 pythonpath = ["."]
 testpaths = ["core/tests", "fabric/tests"]
 addopts = "-ra -q"
+markers = [
+    "fabric: behaviour tests that hit a real Fabric workspace (skipped unless FABRIC_TENANT_ID is set)",
+]
 
 [tool.ruff]
 line-length = 100

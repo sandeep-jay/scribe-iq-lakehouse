@@ -1,62 +1,268 @@
 """FabricPlatform — Microsoft Fabric implementation of LakehousePlatform.
 
-Bronze/Silver/Gold land in a OneLake-backed Lakehouse; Spark via the attached
+Bronze/Silver/Gold live in a OneLake-backed Lakehouse; Spark via the attached
 session; ingest_log and metrics emitted through the same interface used by
 LocalLitePlatform so transforms and the Dagster asset graph remain unchanged.
 
-This module is **not implemented yet** — Session 5 work. The class is wired
-into the factory at `fabric.platform.FabricPlatform` (see
-`core/platform/factory.py`) and every method currently raises
-``NotImplementedError`` so accidental dispatch fails loudly rather than silently
-returning empty results.
+Spark, ``delta-spark``, and ``notebookutils.mssparkutils`` are imported lazily
+inside the methods that need them. This keeps the module importable in any
+environment (CI, local dev without Fabric, offline contract tests) — only
+calling a method that actually needs Spark forces the import.
+
+Storage layout assumes a **schema-enabled** Lakehouse (Fabric default for new
+Lakehouses since 2024):
+
+    Tables/<layer>/<table>      Delta tables (silver, gold)
+    Files/bronze/fhir/...       Raw FHIR JSON
+    Files/gold/_metadata/...    Corpus manifest
 
 See:
     - ADR-001 (Fabric-first)
     - ADR-002 (platform abstraction)
+    - ADR-009 (Delta + CDC contract)
     - ADR-017 (multi-platform repo layout)
     - ADR-018 (CI/CD monorepo)
-    - docs/roadmap/multi-platform-reorg.md
+    - ADR-019 (Silver MERGE idempotency — target-dedup guard)
+    - docs/roadmap/fabric-execution-plan.md (Phase 2 — this module)
     - fabric/docs/DEPLOYMENT.md
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 import pyarrow as pa
 
 from core.platform.base import LakehousePlatform
+from core.transforms.registry import SILVER_PRIMARY_KEYS
+
+logger = logging.getLogger(__name__)
+
+_CDC_PROPERTY = "delta.enableChangeDataFeed"
+_ONELAKE_HOST = "onelake.dfs.fabric.microsoft.com"
 
 
 class FabricPlatform(LakehousePlatform):
-    """Microsoft Fabric platform — OneLake Delta + Fabric Spark session."""
+    """Microsoft Fabric platform — OneLake Delta + Fabric Spark session.
 
-    def storage_path(self, layer: str, table: str) -> str:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+    All Spark/notebookutils interactions are deferred to method call time so this
+    class can be imported (and its contract verified) outside a Fabric runtime.
+    """
 
-    def read_bronze_fhir(self, cohort: str | None = None) -> list[dict]:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+    name = "fabric"
 
-    def write_silver(self, table: str, data: pa.Table, mode: str = "merge") -> None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+    def __init__(
+        self,
+        workspace_id: str | None = None,
+        lakehouse_name: str | None = None,
+        spark: Any | None = None,
+    ) -> None:
+        """Initialize with optional overrides for testability.
 
-    def read_silver(self, table: str) -> pa.Table:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+        Args:
+            workspace_id: Fabric workspace GUID. Falls back to
+                ``mssparkutils.env.getWorkspaceId()`` on first method call.
+            lakehouse_name: Lakehouse name (e.g. ``"scribe_iq"``). Falls back to
+                the attached Lakehouse via ``mssparkutils.lakehouse.get()``.
+            spark: Pre-existing ``SparkSession``. Falls back to the Fabric-injected
+                global ``spark`` on first method call.
+        """
+        self._workspace_id = workspace_id
+        self._lakehouse_name = lakehouse_name
+        self._spark = spark
 
-    def write_gold(self, table: str, data: pa.Table) -> None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+    # ------------------------------------------------------- lazy environment
 
-    def log_metric(self, table: str, metric: str, value: Any) -> None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
-
-    def send_alert(self, severity: str, message: str) -> None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+    def _ensure_env(self) -> tuple[str, str]:
+        """Resolve workspace + lakehouse names from mssparkutils on first call."""
+        if self._workspace_id is None or self._lakehouse_name is None:
+            try:
+                import notebookutils.mssparkutils as msu
+            except ImportError as exc:
+                raise RuntimeError(
+                    "FabricPlatform needs workspace_id + lakehouse_name; pass them "
+                    "explicitly or run inside a Fabric notebook where "
+                    "notebookutils.mssparkutils is available."
+                ) from exc
+            if self._workspace_id is None:
+                self._workspace_id = msu.env.getWorkspaceId()
+            if self._lakehouse_name is None:
+                self._lakehouse_name = msu.lakehouse.get()["displayName"]
+        return self._workspace_id, self._lakehouse_name
 
     def get_spark_session(self) -> Any | None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+        """Return the attached Fabric SparkSession (injected as global ``spark``)."""
+        if self._spark is not None:
+            return self._spark
+        try:
+            from pyspark.sql import SparkSession
+        except ImportError:
+            return None
+        self._spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
+        return self._spark
+
+    # ----------------------------------------------------------------- paths
+
+    def storage_path(self, layer: str, table: str) -> str:
+        """Return the OneLake abfss URI for a Delta table or raw-file root."""
+        self._validate_layer(layer)
+        workspace_id, lakehouse_name = self._ensure_env()
+        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
+        if layer == "bronze":
+            return f"{base}/Files/bronze/{table}"
+        return f"{base}/Tables/{layer}/{table}"
+
+    # ----------------------------------------------------------------- bronze
+
+    def read_bronze_fhir(self, cohort: str | None = None) -> list[dict]:
+        """Read FHIR bundles from ``Files/bronze/fhir/cohort=*/*.json``."""
+        try:
+            import notebookutils.mssparkutils as msu
+        except ImportError as exc:
+            raise RuntimeError("read_bronze_fhir requires Fabric runtime") from exc
+
+        fhir_root = self.storage_path("bronze", "fhir")
+        pattern_dir = f"{fhir_root}/cohort={cohort}" if cohort else fhir_root
+        bundles: list[dict] = []
+        for entry in self._walk_json(msu, pattern_dir, recurse=cohort is None):
+            try:
+                text = msu.fs.head(entry, 1024 * 1024 * 64)  # 64 MB cap per bundle
+                bundles.append(json.loads(text))
+            except (json.JSONDecodeError, OSError) as err:
+                logger.warning("Skipping unreadable bundle: %s", err)
+        return bundles
+
+    @staticmethod
+    def _walk_json(msu: Any, root: str, *, recurse: bool) -> list[str]:
+        """Yield .json paths under ``root``; one cohort deep when ``recurse=True``."""
+        out: list[str] = []
+        for entry in msu.fs.ls(root):
+            if entry.isDir and recurse:
+                out.extend(e.path for e in msu.fs.ls(entry.path) if e.name.endswith(".json"))
+            elif entry.name.endswith(".json"):
+                out.append(entry.path)
+        return out
+
+    # ----------------------------------------------------------- silver/gold
+
+    def write_silver(self, table: str, data: pa.Table, mode: str = "merge") -> None:
+        """Upsert/append/overwrite a Silver Delta table on OneLake."""
+        path = self.storage_path("silver", table)
+        self._write_delta(path, data, mode, table)
+
+    def read_silver(self, table: str) -> pa.Table:
+        """Read a Silver Delta table from OneLake as a PyArrow table."""
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError("read_silver requires an active SparkSession")
+        return pa.Table.from_pandas(
+            spark.read.format("delta").load(self.storage_path("silver", table)).toPandas()
+        )
+
+    def write_gold(self, table: str, data: pa.Table) -> None:
+        """Overwrite a Gold Delta table on OneLake."""
+        self._write_delta(self.storage_path("gold", table), data, "overwrite", table)
 
     def table_version(self, layer: str, table: str) -> int | None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+        """Return the latest Delta version for ``<layer>.<table>``, or ``None``."""
+        spark = self.get_spark_session()
+        if spark is None:
+            return None
+        try:
+            from delta.tables import DeltaTable as SparkDeltaTable
+        except ImportError:
+            return None
+        try:
+            dt = SparkDeltaTable.forPath(spark, self.storage_path(layer, table))
+            row = dt.history(1).first()
+            return int(row["version"]) if row is not None else None
+        except Exception as err:  # noqa: BLE001 - any Delta error means "no version"
+            logger.debug("table_version lookup failed for %s.%s: %s", layer, table, err)
+            return None
 
     def write_gold_manifest(self, manifest: dict) -> None:
-        raise NotImplementedError("FabricPlatform implemented in Session 5")
+        """Write corpus manifest JSON to ``Files/gold/_metadata/corpus_manifest.json``."""
+        try:
+            import notebookutils.mssparkutils as msu
+        except ImportError as exc:
+            raise RuntimeError("write_gold_manifest requires Fabric runtime") from exc
+        workspace_id, lakehouse_name = self._ensure_env()
+        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
+        path = f"{base}/Files/gold/_metadata/corpus_manifest.json"
+        msu.fs.put(path, json.dumps(manifest, indent=2), True)  # overwrite=True
+
+    # ----------------------------------------------------------- write helper
+
+    def _write_delta(self, path: str, data: pa.Table, mode: str, table: str) -> None:
+        """Create-or-upsert a Delta table at ``path`` honoring the requested mode.
+
+        Mirrors :meth:`LocalLitePlatform._write_delta`, including the ADR-019
+        target-side dedup guard before MERGE.
+        """
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError(f"_write_delta on {path!r} requires an active SparkSession")
+
+        from delta.tables import DeltaTable as SparkDeltaTable
+
+        df = spark.createDataFrame(data.to_pandas())
+        exists = SparkDeltaTable.isDeltaTable(spark, path)
+
+        if mode == "merge" and exists:
+            key = SILVER_PRIMARY_KEYS.get(table)
+            if key is None:
+                raise ValueError(f"No primary key registered for table {table!r}; cannot merge")
+
+            # ADR-019: target-side dedup guard. Spark equivalent of the LocalLite
+            # pyarrow path — count distinct PKs vs total rows, rewrite deduped
+            # only if dups exist.
+            target_df = spark.read.format("delta").load(path)
+            total = target_df.count()
+            distinct = target_df.select(key).distinct().count()
+            if total != distinct:
+                logger.warning(
+                    "Target table %r has %d duplicate %s rows; rewriting deduped before MERGE",
+                    table,
+                    total - distinct,
+                    key,
+                )
+                deduped = target_df.dropDuplicates([key])
+                (
+                    deduped.write.format("delta")
+                    .mode("overwrite")
+                    .option(_CDC_PROPERTY, "true")
+                    .save(path)
+                )
+
+            target = SparkDeltaTable.forPath(spark, path)
+            (
+                target.alias("target")
+                .merge(df.alias("source"), f"target.{key} = source.{key}")
+                .whenMatchedUpdateAll()
+                .whenNotMatchedInsertAll()
+                .execute()
+            )
+            return
+
+        # First write or explicit overwrite/append: create with CDC enabled.
+        write_mode = "append" if (mode == "append" and exists) else "overwrite"
+        (df.write.format("delta").mode(write_mode).option(_CDC_PROPERTY, "true").save(path))
+
+    # --------------------------------------------------------- observability
+
+    def log_metric(self, table: str, metric: str, value: Any) -> None:
+        """Emit a metric line (captured in the Fabric notebook run logs)."""
+        logger.info("metric table=%s %s=%s", table, metric, value)
+
+    def send_alert(self, severity: str, message: str) -> None:
+        """Emit an alert; ``critical`` also raises so the notebook fails loudly."""
+        logger.log(
+            logging.CRITICAL if severity == "critical" else logging.WARNING,
+            "ALERT [%s] %s",
+            severity,
+            message,
+        )
+        if severity == "critical":
+            raise RuntimeError(f"Critical alert: {message}")
