@@ -891,8 +891,9 @@ After lakehouse Silver: 1,500 patients available.
 After 200 Ollama notes: patient-linked dialogue layer added.
 After M5 full run: complete production corpus, scribe-iq migration.
 
-**Spec:** `gold/generation/` — see ollama-gold-generation-spec.md
-`gold.encounter_summary` corpus contract is the handoff interface.
+**Status:** Deferred. `gold/generation/` module not yet built; spec will be
+added back when implementation starts. `gold.encounter_summary` corpus
+contract is the handoff interface when it does land.
 
 ---
 
