@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "config": {
+    "logicalId": "5bc850f9-0378-592d-b6ab-0c5ee639ea4f",
+    "version": "2.0"
+  },
+  "metadata": {
+    "displayName": "06_silver_imaging_dicom",
+    "type": "Notebook"
+  }
+}

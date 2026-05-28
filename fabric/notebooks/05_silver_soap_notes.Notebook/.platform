@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "config": {
+    "logicalId": "98108360-0a20-5ca9-ae9b-83caeea3e2ec",
+    "version": "2.0"
+  },
+  "metadata": {
+    "displayName": "05_silver_soap_notes",
+    "type": "Notebook"
+  }
+}

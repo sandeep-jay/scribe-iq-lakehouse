@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "config": {
+    "logicalId": "d772df49-25cc-529b-b471-46f50daf3b67",
+    "version": "2.0"
+  },
+  "metadata": {
+    "displayName": "07_silver_ecg_genomics",
+    "type": "Notebook"
+  }
+}
