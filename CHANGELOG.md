@@ -330,8 +330,9 @@ files ruff + black clean.
 - `.pre-commit-config.yaml`: read-only `corpus-schema-current` hook
   (`gen_corpus_schema.py --check`); `/session-end` doc-sync now regenerates the corpus schema.
 #### Full-run result
-- 1,278 patients → **143,946** `gold.encounter_summary` rows in **~5s** (M1 Max), nested
-  Delta types + CDC verified; manifest written to `gold/_metadata/corpus_manifest.json`.
+- 1,278 patients → **143,946** `gold.encounter_summary` rows in **~5s** on a single
+  laptop, nested Delta types + CDC verified; manifest written to
+  `gold/_metadata/corpus_manifest.json`.
 
 ### Documentation — generated-first (ADR-011)
 #### Added
@@ -387,7 +388,7 @@ files ruff + black clean.
 - venv + full `[local,dev]` extras (polars, deltalake, duckdb, watchdog, pydicom)
 #### Results
 - Full run: 1,280 files (1,278 patients + `organizations.json` + `practitioners.json`)
-  → all 10 Silver Delta tables in **2m30s** on M1 Max, all validations passed.
+  → all 10 Silver Delta tables in **2m30s** on a single laptop, all validations passed.
   Row counts: encounter 143,946 · observation 669,898 · medication_request 209,401 ·
   procedure 56,092 · soap_note 143,946 · condition 15,956 · imaging_study 3,752 ·
   genomic_report 419 · patient 1,278 · ecg_metadata 0 (ECG is Binary waveform, not FHIR).

@@ -6,11 +6,10 @@ patients). Fabric-first medallion: Bronze → Silver → Gold. Feeds scribe-iq (
 and clinical-bert-pipeline (NLP). Ollama generation pipeline produces patient-linked
 clinical dialogues from Gold encounter_summary.
 
-## Developer context
-- M1 Max 32GB (M5 Max 128GB arriving June 2026)
-- Fabric trial: ~15 days remaining — Fabric notebooks are priority
+## Execution context
+- Fabric trial active — Fabric notebooks are the priority surface
 - LAKEHOUSE_PLATFORM env var controls execution environment
-- Active job hunt — capture Fabric screenshots before trial expires
+- Capture Fabric screenshots as you go (trial-window evidence)
 
 ## System context
 Consumes: s3://synthea-open-data/coherent/ (open data, no credentials needed)
@@ -63,7 +62,6 @@ it belongs in CHANGELOG.
 
 ## Key files
   docs/roadmap/scribe-iq-lakehouse-spec.md   Full implementation spec
-  docs/roadmap/MASTER_PLAN.md                Cross-repo weekend execution plan
   docs/roadmap/multi-platform-reorg.md       Repo layout + CI/CD model (ADR-017/018)
   docs/roadmap/fabric-execution-plan.md      Session 5 plan — Fabric end-to-end + dedup fix + Power BI
   docs/adr/                                  ADRs — read before touching architecture
@@ -86,7 +84,7 @@ it belongs in CHANGELOG.
   .claude/settings.json        Tracked: curated allow globs + deny + hooks (portable paths)
   .claude/settings.local.json  Gitignored: personal/auto-approved permissions (machine-specific)
 
-## Screenshot capture priority (Fabric trial ~15 days remaining)
+## Screenshot capture priority (Fabric trial window)
 If time is tight: capture screenshots BEFORE polishing notebooks.
 Evidence of a running system matters more than polished code not captured.
 Checklist: docs/roadmap/scribe-iq-lakehouse-spec.md section 15.2
@@ -94,7 +92,7 @@ Checklist: docs/roadmap/scribe-iq-lakehouse-spec.md section 15.2
 ## Skills available (lazy-loaded from .claude/skills/)
 /healthcare-data  — FHIR handling, Base64 decode, DICOM, Synthea limitations
 /delta-patterns   — Delta Lake, CDC, medallion rules, MERGE patterns, streaming
-/mlops            — MLflow, DVC, eval_report.json, M1 Max training config
+/mlops            — MLflow, DVC, eval_report.json, Apple Silicon training config
 /session-end      — Full end-of-session protocol
 /new-transform    — Scaffold transform + test + Fabric notebook
 /new-adr          — Write ADR with template, update index

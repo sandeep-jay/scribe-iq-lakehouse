@@ -27,9 +27,10 @@ Every hyperparameter from params.yaml — never hardcoded in code.
 ## Model registration
 Only register if F1 >= gate_threshold. Never register a failing model.
 
-## M1 Max Apple Silicon
+## Apple Silicon (MPS)
 fp16=False, bf16=False — MPS does not support these.
-use_mps_device=True, per_device_train_batch_size=32.
+use_mps_device=True; size per_device_train_batch_size to fit available RAM
+(start at 16, double until OOM, back off one step).
 
 ## Model card discipline
 Every trained model gets model_card.md committed to the repo.

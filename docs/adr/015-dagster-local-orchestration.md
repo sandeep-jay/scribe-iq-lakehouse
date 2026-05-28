@@ -36,7 +36,7 @@ the persistence pattern are specified separately in [ADR-016](016-dagster-asset-
 |--------|------|------|-------------|
 | **Dagster (chosen)** | Asset/lineage model maps 1:1 onto the medallion; partitions = cohorts; asset checks = validation; strongest data-engineering signal | Heavier; defines its own project layout; steeper learning curve | — |
 | Prefect | Lowest friction — wraps existing functions as `@flow`/`@task`; local UI, retries, scheduling | Flow-centric, not asset-centric → weaker lineage story; less "lakehouse" fit | Good, but Dagster's asset graph is the better portfolio artifact for a medallion |
-| Airflow | Ubiquitous name recognition | Scheduler + webserver + metadata DB is heavy on M1 32 GB; DAG-of-tasks is not data-aware | Operationally heavy; against "ship working > perfect" |
+| Airflow | Ubiquitous name recognition | Scheduler + webserver + metadata DB is heavy for a single-laptop dev loop; DAG-of-tasks is not data-aware | Operationally heavy for the local tier |
 | Makefile / `just` | Trivial; targets encode DAG order | No observability, retry, state, or lineage | Cosmetic, not real orchestration |
 | Status quo (imperative CLI) | Simplest; zero deps | No DAG/retry/backfill/history; weak signal | The gap we set out to close — but kept as the CLI path |
 
@@ -67,6 +67,6 @@ the persistence pattern are specified separately in [ADR-016](016-dagster-asset-
   should be added to `.claude/rules/transforms.md`: no `orchestration`/`dagster` import in
   `local/transforms/`).
 - `dagster` + `dagster-webserver` added to `pyproject.toml` `[dev]` (pinned); runs fine on
-  M1 Max 32 GB. `tests/test_dagster_defs.py` materializes assets on the fixture via the
+  a typical laptop. `tests/test_dagster_defs.py` materializes assets on the fixture via the
   LocalLitePlatform (tests alongside, per non-negotiables).
 - Modelling/partitions/checks/persistence: see [ADR-016](016-dagster-asset-graph.md).

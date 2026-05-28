@@ -277,7 +277,7 @@ Each asset surfaces inline metadata so the graph isn't just lineage — it's the
 
 The same renderings are reused by `python -m scripts.demo_walkthrough` for a CLI audience
 and by the DuckDB UI notebook for an SQL audience (see §5 above and
-[`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md) for the portfolio-video recording guide).
+[`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md) for the demo-video recording guide).
 
 ### Asset checks — rule-by-rule detail
 

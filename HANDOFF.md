@@ -44,7 +44,6 @@ Detailed walkthrough + gotchas: [fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYME
 |---|---|---|---|
 | Service Principal registration | Skip (manual UI uploads forever) / Register (enables REST + CI) | User | Before 3rd wheel re-upload becomes annoying |
 | Coherent ingest scope in 01_bronze_ingest | Full 1,278 patients (~10 min, ~14 GB OneLake) / Stratified sample (~200 patients, ~1 min) | User + Claude | Before authoring 01 |
-| Portfolio video timing | Record after notebook 05 / after Phase 4 complete / after Phase 7 (Power BI) | User | Open since Session 4 — Fabric trial sets the floor (~14 days) |
 
 ## Blockers / waiting-on
 

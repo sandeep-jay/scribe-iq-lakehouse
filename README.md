@@ -205,7 +205,7 @@ never imports from any platform tier. Enforced by a CI grep check.
 - **[DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)** — every Silver column + validation rule (generated)
 - **[CORPUS_CONTRACT.md](docs/CORPUS_CONTRACT.md)** — the Gold handoff contract (v1.1.0)
 - **[BENCHMARKS.md](docs/BENCHMARKS.md)** — real run metrics + engine matrix
-- **[demo/PLAYBOOK.md](docs/demo/PLAYBOOK.md)** — recording guide for the portfolio video demo
+- **[demo/PLAYBOOK.md](docs/demo/PLAYBOOK.md)** — recording guide for the demo video
 - **[docs/adr/](docs/adr/README.md)** — 18 Architecture Decision Records
 - **[docs/roadmap/](docs/roadmap/scribe-iq-lakehouse-spec.md)** — full spec + cross-repo plan + multi-platform reorg
 

@@ -1,15 +1,12 @@
 # scribe-iq-lakehouse — Project Spec
 
-**Portfolio project:** Sandeep Jayaprakash
 **Repo:** `scribe-iq-lakehouse`
 **Status:** Implementation-ready
-**Implementation:** Claude Code
 **Execution environments:** Microsoft Fabric (Bronze + Silver) + Local Python (Gold)
-**Trial window:** ~15-20 days remaining — Fabric work starts immediately
 
 ---
 
-## 1. Purpose and Portfolio Narrative
+## 1. Purpose
 
 A production-pattern healthcare data lakehouse built on Synthea Coherent —
 the richest publicly available synthetic longitudinal patient dataset. Ingests
@@ -24,7 +21,7 @@ for downstream AI workloads.
 **Ollama Gold generation is a separate spec** — this spec covers Bronze through
 Silver and the corpus handoff contract. Gold generation follows once this ships.
 
-### Portfolio signals
+### Architectural signals
 
 | Signal | How it shows |
 |---|---|
@@ -875,16 +872,16 @@ why it is deferred, and what value it adds when built.
 **What:** LLM-based synthetic dialogue generation grounded in
 Silver SOAP notes and Gold encounter_summary.
 
-**Portfolio run (this weekend):** 200 notes from stratified sample
-of 1,500-patient Synthea Coherent cohort. ~2.5 hours on M1 Max.
+**Initial run:** 200 notes from a stratified sample of the
+1,500-patient Synthea Coherent cohort. ~2.5 hours locally.
 Task A (dialogue) only. Layer 1+2 validation. Fast plan mode.
 
-**Full corpus run (M5 Max, June 3-6):** 6,300 notes, both tasks,
-full QwQ validation. ~55 hours across 3 overnight runs.
+**Full corpus run:** 6,300 notes, both tasks, full QwQ validation.
+~55 hours across multiple overnight runs on higher-memory hardware.
 
 **Why Task B deferred:** Unstructured note generation adds ~8 sec/note.
 At 200 notes it saves 27 minutes. At 6,300 notes it saves 14 hours.
-Worth doing properly on M5 with full validation.
+Worth doing properly with full validation on capable hardware.
 
 **Context:** scribe-iq currently has 19 patients (dev corpus).
 After lakehouse Silver: 1,500 patients available.
@@ -1313,21 +1310,21 @@ The Delta format is identical — same notebooks, different storage path.
 
 ---
 
-## 13. M1 Max Training Notes
+## 13. Local Spark + Ollama notes
 
-All local pipeline work runs on M1 Max 32GB. Key configs:
+Local pipeline work runs on Apple Silicon (MPS). Key configs:
 
 ```python
 # Spark local mode for delta-rs pipeline
 spark = (SparkSession.builder
-    .master("local[10]")           # 10 cores on M1 Max
+    .master("local[10]")
     .config("spark.driver.memory", "24g")
     .config("spark.sql.extensions",
             "io.delta.sql.DeltaSparkSessionExtension")
     .getOrCreate())
 ```
 
-Ollama on M1 Max:
+Ollama on Apple Silicon:
 - llama3.1:8b runs at ~45 tokens/sec on MPS
 - 6,000 notes × 500 tokens ÷ 45 tok/s ÷ 3600 = ~18 hours generation
 - Ollama Gold generation pipeline MUST be resumable with checkpointing
@@ -1940,7 +1937,7 @@ Use this script for any recorded demo or live walkthrough.
 
 ### 15.4 Video Capture Plan
 
-**Tool:** OBS Studio or QuickTime screen recording on M1 Max
+**Tool:** OBS Studio or QuickTime screen recording
 
 **What to record:**
 
@@ -1979,11 +1976,11 @@ Video 5 — Gold → Downstream (1 min)
   Purpose: Shows the handoff to Ollama/Scribe IQ is real
 ```
 
-**Recording tips for M1 Max:**
+**Recording tips:**
 - Use 1440p or 4K — Fabric UI is detail-rich, low res looks bad
 - Record audio narration live — easier than adding voiceover later
-- Keep each video under 4 minutes — hiring reviewers watch the first 2 min
-- Upload to YouTube unlisted, embed in README
+- Keep each video under 4 minutes — most viewers watch the first 2 min
+- Upload to a video host (unlisted is fine), embed link in README
 
 ---
 
@@ -2065,92 +2062,7 @@ rich>=13.0
 
 ---
 
-## 16. Accelerated Plan — Fabric First (Job Hunt Mode)
-
-Given active job search and ~15-20 day Fabric trial remaining,
-Fabric is the priority execution environment. Local Polars lite
-builds in parallel as bandwidth allows — no time pressure.
-
-### Guiding principles for Fabric-first development
-
-```
-1. Start with 10-20 patients — get pipeline green before scaling
-2. display() after every transform — verify before writing to Delta
-3. One notebook fully working before starting the next
-4. Write local test alongside each notebook as you go
-5. Platform abstraction layer from day one — every notebook uses it
-6. Capture screenshots continuously — don't batch at the end
-```
-
-### Weekend — Locked execution plan
-
-See MASTER_PLAN.md for full cross-repo schedule.
-Lakehouse-specific milestones below.
-
-```
-FRIDAY NIGHT
-  ├── Fabric: workspace created, 3 lakehouses, S3 shortcut verified
-  └── Notebook 00_setup running clean
-
-SATURDAY MORNING
-  └── Fabric: Notebooks 01-04
-      01 bronze ingest (20-patient dev cohort first)
-      02 silver patient
-      03 silver encounter
-      04 silver clinical (condition, observation, meds, procedure)
-      display() verified after each notebook
-
-SATURDAY AFTERNOON
-  └── Fabric: Notebooks 05-07
-      05 silver_soap_notes ← PRIORITY (feeds BERT if ready)
-      06 silver_ecg
-      07 silver_imaging (pydicom stop_before_pixels)
-
-SATURDAY EVENING
-  └── Fabric: Notebooks 08-09
-      08 silver_genomics (data_limitation column always populated)
-      09 gold_encounter_summary
-      Enable CDC on all Silver tables
-
-SUNDAY MORNING
-  ├── Fabric: Master pipeline canvas
-  ├── Scale to full cohort — all 1,500 patients
-  └── First full end-to-end pipeline run
-
-SUNDAY AFTERNOON
-  ├── Fabric: DevOps + observability
-      ingest_log, pipeline_metrics, quality_report
-      Data Activator alert rules
-      Power BI dashboard (4 pages)
-  ├── CAPTURE: All screenshots (checklist 15.2) ← do this early
-  └── CAPTURE: 3 key videos (pipeline run, SOAP decode, dashboard)
-```
-
-**Screenshot capture rule:** If Sunday afternoon is pressed for time,
-capture screenshots BEFORE polishing notebooks.
-Evidence of running system beats polished code that isn't captured.
-
-### Post-weekend — Polars lite (no time pressure)
-
-```
-  ├── Platform abstraction layer — base.py, factory.py, local_lite.py
-  ├── pipeline_lite.py — 3-minute quick start for reviewers
-  ├── Full test suite — all transforms covered
-  ├── CI — GitHub Actions on every PR
-  └── benchmarks/ skeleton — local vs Fabric results
-```
-
-### Platform migration roadmap (post-job-hunt)
-
-```
-Databricks   — highest priority, most common enterprise platform
-AWS Glue     — second priority, healthcare cloud preference
-GCP Dataproc — third priority
-```
-
----
-
-## 17. Platform Abstraction Layer
+## 16. Platform Abstraction Layer
 
 Full specification — engine-agnostic design for multi-cloud portability.
 

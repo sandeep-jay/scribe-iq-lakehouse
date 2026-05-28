@@ -24,8 +24,8 @@ join/aggregation engine over the Arrow inputs — it is engine-agnostic, not a s
 dependency, and is already a `[local]` extra (ADR-003). The output is assembled
 column-by-column against an explicit `GOLD_SCHEMA` (never inferred), including the nested
 struct/list columns — mirroring the Silver `build_arrow_table` philosophy so
-`table.schema == GOLD_SCHEMA` holds exactly. Full-dataset build: **143,946 rows in ~5s** on
-the M1 Max; delta-rs writes and reads the nested types cleanly with CDC enabled.
+`table.schema == GOLD_SCHEMA` holds exactly. Full-dataset build: **143,946 rows in ~5s** on a
+single laptop; delta-rs writes and reads the nested types cleanly with CDC enabled.
 
 **Grain — one row per encounter; conditions/meds scoped to the encounter.** Conditions,
 medications, procedures, labs and vitals are aggregated by `encounter_id` exactly as the

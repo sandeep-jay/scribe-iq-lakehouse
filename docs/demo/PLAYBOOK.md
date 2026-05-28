@@ -1,6 +1,6 @@
 # Demo Playbook — recording the scribe-iq-lakehouse video
 
-Operational guide for producing a portfolio-grade video demo of the lakehouse.
+Operational guide for producing a video demo of the lakehouse.
 Three artifacts compose the story; the playbook below sequences them.
 
 ```
@@ -11,7 +11,7 @@ orchestration/  (Dagster UI)                →   "look at the asset graph + sen
 core/scripts/demo_walkthrough.py                 →   "look at one patient end-to-end"
 ```
 
-Target length: **90 seconds for LinkedIn**, **3 minutes for portfolio site**.
+Target length: **90-second short cut** and **3-minute long-form cut**.
 
 ---
 
@@ -69,7 +69,7 @@ duckdb docs/demo/notebooks/demo.duckdb -ui
 
 | Beat | Time | What's on screen | Voiceover (script, ≤2 lines) |
 |------|------|------------------|-------------------------------|
-| **1. Hook** | 0:00–0:15 | Single rendered SOAP note from the DuckDB UI (Cell 14) | "1,278 synthetic patients, FHIR R4, into a clinical-RAG corpus. Production patterns, single laptop." |
+| **1. Hook** | 0:00–0:15 | Single rendered SOAP note from the DuckDB UI (Cell 14) | "1,278 synthetic patients, FHIR R4, into a clinical-RAG corpus. Production patterns, runs locally." |
 | **2. The raw mess** | 0:15–0:45 | VSCode scrolling through a FHIR bundle JSON | "FHIR is verbose, nested, optional fields everywhere. Not queryable. Step one: turn it into typed tables." |
 | **3. The medallion** | 0:45–1:30 | Dagster asset graph → click bronze/silver/gold assets → click an asset check | "Bronze raw, Silver typed/CDC, Gold denormalized. Dagster orchestrates locally — drop a cohort and the asset graph materializes, with validation as first-class asset checks." |
 | **4. The transformation** | 1:30–2:30 | Terminal running `python -m scripts.demo_walkthrough --pause 2.5` | "Same patient, three layers — Bronze JSON, parsed records, typed Silver, denormalized Gold with the SOAP note rendered." |
@@ -103,7 +103,7 @@ Each take is a separate clip — splice in post.
 clear
 .venv/bin/python -m scripts.demo_walkthrough --pause 0 | grep -A 60 "SOAP note"
 ```
-Capture **only** the SOAP note rendering. Reuse a screen-grab as the LinkedIn thumbnail.
+Capture **only** the SOAP note rendering. Reuse a screen-grab as the video thumbnail.
 
 ### Take 2 — The raw mess (~30 sec)
 - Window 4 (VSCode) showing `data/bronze/fhir/cohort=A/<patient>.json`
@@ -154,9 +154,9 @@ time to narrate each section: "Bronze JSON" → "parsed records" → "typed Silv
 
 Sequence: **Take 1 (hook) → Take 2 (raw) → architecture diagram still (5s) → Take 3 (Dagster) → Take 4 (sensor, optional) → Take 5 (walkthrough) → Take 6 (DuckDB UI) → Take 7 (closing)**.
 
-- Burn captions in — LinkedIn/Twitter auto-play muted
+- Burn captions in — most video hosts auto-play muted
 - Voiceover recorded separately (USB mic, QuickTime), sync to picture
-- Cut hard — 90 sec LinkedIn version drops Takes 2, 4, 7; 3-min version keeps all
+- Cut hard — 90-sec short cut drops Takes 2, 4, 7; 3-min long cut keeps all
 
 ---
 
@@ -165,8 +165,8 @@ Sequence: **Take 1 (hook) → Take 2 (raw) → architecture diagram still (5s) �
 - [ ] Commit `docs/demo/notebooks/demo_notebook.sql` (the .duckdb binary stays gitignored)
 - [ ] Push to GitHub; tag the commit (e.g. `v0.4-demo`)
 - [ ] Pin the commit hash in the video description
-- [ ] Upload 90-sec cut to LinkedIn; 3-min cut to portfolio
-- [ ] Cross-link: README has a "Demo video" link to YouTube; YouTube description links to the README
+- [ ] Upload short cut + long cut to a video host
+- [ ] Cross-link: README has a "Demo video" link; video description links back to the README
 
 ---
 

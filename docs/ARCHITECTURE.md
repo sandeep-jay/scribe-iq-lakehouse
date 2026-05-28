@@ -103,7 +103,7 @@ scripts/
   gen_corpus_schema.py     Generates schemas/gold_encounter_summary.json from GOLD_SCHEMA (ADR-012)
   demo_walkthrough.py      One-patient Bronze → Parse → Silver → Gold tour (rich CLI; same renderers as Dagster UI)
 docs/demo/
-  PLAYBOOK.md               Portfolio video recording guide (5-beat structure, takes, edit, publish)
+  PLAYBOOK.md               Demo video recording guide (5-beat structure, takes, edit, publish)
   notebooks/
     demo_notebook.sql       20-cell DuckDB UI source — corpus headlines, top conditions, SOAP notes, lineage
     README.md               How to open / regenerate the .duckdb (gitignored)
@@ -123,7 +123,7 @@ docs/demo/
 ## Current scale (full local run)
 
 1,280 bundles (1,278 patients) → 10 Silver Delta tables in **~2m30s**, then →
-**143,946** `gold.encounter_summary` rows in **~6.5s** on M1 Max, all validations passing.
+**143,946** `gold.encounter_summary` rows in **~6.5s** on a single laptop, all validations passing.
 Per-table counts, corpus coverage, and methodology: [BENCHMARKS.md](BENCHMARKS.md). Operational
 procedures: [RUNBOOK.md](RUNBOOK.md). The Gold corpus contract is documented in
 [CORPUS_CONTRACT.md](CORPUS_CONTRACT.md).

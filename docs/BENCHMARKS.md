@@ -8,7 +8,7 @@ pipeline or dataset materially changes.
 
 | | |
 |--|--|
-| Machine | Apple M1 Max, 32 GB |
+| Machine | Apple Silicon laptop |
 | Python | 3.11.9 (`.venv`) |
 | Platform | `local_lite` — Polars 1.41 · deltalake (delta-rs) 1.6 · DuckDB 1.5 · pyarrow 24 |
 | Source | `s3://synthea-open-data/coherent/unzipped/fhir/` (AWS Open Data, no credentials) |
@@ -120,7 +120,7 @@ read-only over the existing Delta tables):
 |------|-------|---------|
 | `core/scripts/demo_walkthrough.py` | rich CLI, one patient end-to-end | Bronze → Parse → Silver → Gold for one anchor patient, with full SOAP note rendered |
 | `docs/demo/notebooks/demo_notebook.sql` | DuckDB UI, 20 SQL cells | Corpus headlines, top conditions, as-of-date condition growth, full SOAP notes, keyword cohort search |
-| `docs/demo/PLAYBOOK.md` | recording guide | 5-beat portfolio video script + take-by-take recording sequence |
+| `docs/demo/PLAYBOOK.md` | recording guide | 5-beat demo video script + take-by-take recording sequence |
 
 All three render via `local/preview.py`, so the Dagster asset metadata, the CLI walkthrough,
 and the SQL notebook present the same data shape.
@@ -144,5 +144,6 @@ python -m core.surfaces.cli.pipeline --gold-only                        # rebuil
 - Single run, warm OS file cache; numbers are indicative, not a controlled benchmark.
 - Ingest time is network-bound and will vary; the pipeline time is the stable figure.
 - `local_lite` holds one cohort's records in memory at a time (~1/3 of the data); peak
-  RSS was comfortable on 32 GB. Full-dataset-in-memory was deliberately avoided.
+  RSS stayed well under what a typical dev laptop offers. Full-dataset-in-memory was
+  deliberately avoided.
 - Fabric/Spark figures will be filled in when those platforms are implemented (Session 5).

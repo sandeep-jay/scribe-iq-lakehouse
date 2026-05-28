@@ -6,18 +6,18 @@
 
 ## Context
 
-Active job hunt targeting healthcare AI and data engineering roles. Microsoft Fabric
-trial is active with ~15-20 days remaining. Fabric provides the full enterprise data
-platform story (Delta Lake, Spark, Auto Loader, CDC, Power BI) in a single environment.
-The alternative was building locally first using Polars/DuckDB and migrating to Fabric
-later, but this risks trial expiring before Fabric screenshots are captured.
+Microsoft Fabric trial is active with a finite window. Fabric provides the full
+enterprise data platform story (Delta Lake, Spark, Auto Loader, CDC, Power BI) in
+a single environment. The alternative was building locally first using Polars/DuckDB
+and migrating to Fabric later, but this risks trial expiring before Fabric screenshots
+are captured.
 
 ## Decision
 
 Build the medallion pipeline in Fabric first (Bronze + Silver + Gold notebooks).
 Implement the local Polars lite tier in parallel as bandwidth allows, but treat it
 as non-blocking. Capture Fabric screenshots throughout — evidence of a running system
-on the enterprise platform is the portfolio priority.
+on the enterprise platform is the priority during the trial window.
 
 ## Alternatives considered
 
@@ -31,7 +31,7 @@ on the enterprise platform is the portfolio priority.
 
 **Positive:**
 - Fabric screenshots and evidence captured before trial expires
-- Enterprise platform signals visible to hiring reviewers
+- Enterprise platform patterns demonstrated end-to-end
 - Auto Loader streaming simulation runs on real Spark infrastructure
 
 **Negative:**
