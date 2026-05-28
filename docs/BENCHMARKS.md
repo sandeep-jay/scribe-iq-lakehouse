@@ -92,7 +92,7 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 | Capability | local_lite | local_spark | Fabric | Databricks | AWS | GCP |
 |------------|-----------|-------------|--------|------------|-----|-----|
 | Bronze→Silver (full) | ✅ 2m30s | — | 🔜 S4 | roadmap | roadmap | roadmap |
-| Silver→Gold (full) | ✅ ~5s | — | 🔜 S4 | roadmap | roadmap | roadmap |
+| Silver→Gold (full) | ✅ ~6.5s | — | 🔜 S4 | roadmap | roadmap | roadmap |
 | CDC | ✅ | — | 🔜 | roadmap | roadmap | roadmap |
 | Streaming | sim only | — | 🔜 Auto Loader | roadmap | roadmap | roadmap |
 | Cost (1.3k pts) | $0 | $0 | trial | — | — | — |
@@ -103,7 +103,7 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 pip install -e ".[local,dev]"                 # or: .venv
 python -m local.ingest.download --bronze-root data/bronze   # FHIR, ~4.6 GiB, network-bound
 python -m local.ingest.download --assets-only --with-dicom --with-csv  # +9.3 GiB DICOM, 466 MB CSV
-python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m19s) + gold/* (~5s)
+python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m19s) + gold/* (~6.5s)
 python -m local.pipeline --gold-only                        # rebuild Gold from existing Silver
 ```
 

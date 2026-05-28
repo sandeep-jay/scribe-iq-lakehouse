@@ -32,7 +32,7 @@ flowchart TD
     S3 -->|"download.py · aws s3 sync"| B
     B -->|"pipeline.py · per-cohort micro-batch<br/>parse → build → MERGE"| ST
     ST -->|"build_gold · Polars denormalize → overwrite"| G
-    G -.->|"corpus contract v1.0.0"| DS["scribe-iq (RAG)<br/>clinical-bert-pipeline (NLP)<br/>Ollama generation"]
+    G -.->|"corpus contract v1.1.0"| DS["scribe-iq (RAG)<br/>clinical-bert-pipeline (NLP)<br/>Ollama generation"]
 
     classDef done fill:#d4edda,stroke:#28a745;
     classDef planned fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4 3;
@@ -45,7 +45,7 @@ flowchart TD
 |-------|-------|---------|-------|
 | Bronze | ✅ built (local) | raw JSON, cohort-partitioned | append-only; `_metadata/manifest.json` provenance |
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
-| Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; corpus contract v1.0.0 (ADR-012) |
+| Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; as-of-date problem list; corpus contract v1.1.0 (ADR-012/014) |
 | Fabric execution | 🔜 Session 4 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
 
 ## Module map
@@ -88,7 +88,8 @@ scripts/
 
 ## Current scale (full local run)
 
-1,280 bundles (1,278 patients) → 10 Silver Delta tables in **2m30s**, then →
-**143,946** `gold.encounter_summary` rows in **~5s** on M1 Max, all validations passing.
-Per-table counts, corpus coverage, and methodology: [BENCHMARKS.md](BENCHMARKS.md). The
-Gold corpus contract is documented in [CORPUS_CONTRACT.md](CORPUS_CONTRACT.md).
+1,280 bundles (1,278 patients) → 10 Silver Delta tables in **~2m30s**, then →
+**143,946** `gold.encounter_summary` rows in **~6.5s** on M1 Max, all validations passing.
+Per-table counts, corpus coverage, and methodology: [BENCHMARKS.md](BENCHMARKS.md). Operational
+procedures: [RUNBOOK.md](RUNBOOK.md). The Gold corpus contract is documented in
+[CORPUS_CONTRACT.md](CORPUS_CONTRACT.md).

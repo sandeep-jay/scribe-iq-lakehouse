@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 3 — Documentation refresh (README + Runbook)
+#### Added
+- `docs/RUNBOOK.md`: operational runbook — prerequisites/config, first full run, ingest
+  (FHIR + DICOM/CSV), build procedures (full / gold-only / single-cohort / clean rebuild),
+  build verification (delta-rs + DuckDB snippets), doc regeneration, and a troubleshooting
+  table (the clean-slate MERGE gotcha, missing cohorts, DICOM placeholders, etc.).
+#### Changed
+- `README.md`: rewrote the Session-1 stub into a full overview — accurate counts (1,278
+  patients, 116 tests), correct install (`pip install -e ".[local,dev]"`), an Operations
+  command table, data-products/contract section, current layout, and a documentation map.
+- `docs/ARCHITECTURE.md`, `docs/BENCHMARKS.md`: corrected stale figures (corpus contract
+  v1.0.0 → v1.1.0; Gold build ~5s → ~6.5s) and linked the runbook.
+
 ### Session 3 — Problem-list-as-of-date corpus enrichment (ADR-014, contract v1.1.0)
 #### Changed
 - `gold.encounter_summary` `active_conditions` / `active_medications` now reflect the

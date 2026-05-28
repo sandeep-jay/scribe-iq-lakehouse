@@ -139,7 +139,7 @@ Bronze: 1,280 FHIR bundles (4.6 GB) + 298 DICOM (.dcm, 9.3 GB) + 16 CSV (466 MB)
 Silver: 10 Delta tables + ingest_log, CDC, all validations passed; condition has abatement_date;
         imaging 298/3,752 DICOM-enriched
 Gold: encounter_summary (143,946 rows, CDC, as-of-date problem list) + corpus_manifest.json
-Docs: ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT live;
+Docs: README (full), RUNBOOK, ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT live;
       schemas/gold_encounter_summary.json (gen)
 Contract: v1.1.0 — scribe-iq + clinical-bert-pipeline pin against this
 Tests: 116 passing
