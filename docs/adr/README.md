@@ -14,3 +14,4 @@
 | 010 | PHI-safe logging via redaction | Accepted | 2026-05-27 |
 | 011 | Generated-first documentation | Accepted | 2026-05-27 |
 | 012 | Gold encounter_summary — engine, grain, lineage | Accepted | 2026-05-27 |
+| 013 | DICOM ingest, FHIR↔DICOM linkage, header extraction | Accepted | 2026-05-27 |

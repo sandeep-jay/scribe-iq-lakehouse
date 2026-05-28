@@ -19,6 +19,7 @@ from pathlib import Path
 from local.gold.corpus_manifest import build_corpus_manifest
 from local.gold.encounter_summary import SILVER_SOURCES, TABLE_NAME, build_encounter_summary
 from local.ingest.bronze_landing import DEFAULT_BRONZE, cohort_files, cohort_labels
+from local.ingest.dicom_index import DicomIndex
 from local.platform.base import LakehousePlatform
 from local.platform.factory import get_platform
 from local.redaction import redact
@@ -29,8 +30,17 @@ from local.validation.validate import results_to_arrow, validate_table
 logger = logging.getLogger(__name__)
 
 
-def _parse_cohort(parser: FHIRBundleParser, files: list[Path]) -> dict[str, list[dict]]:
-    """Parse every bundle in a cohort, stamping ``source_file`` on each record."""
+def _parse_cohort(
+    parser: FHIRBundleParser,
+    files: list[Path],
+    dicom_index: DicomIndex | None = None,
+) -> dict[str, list[dict]]:
+    """Parse every bundle in a cohort, stamping ``source_file`` on each record.
+
+    When ``dicom_index`` is provided, ImagingStudy records are enriched with DICOM
+    header fields for the studies that have a downloaded ``.dcm`` file (ADR-013).
+    """
+    resolver = dicom_index.read if dicom_index is not None else None
     accumulated: dict[str, list[dict]] = {name: [] for name in SILVER_TABLES}
     for path in files:
         try:
@@ -39,7 +49,7 @@ def _parse_cohort(parser: FHIRBundleParser, files: list[Path]) -> dict[str, list
             # Redact the filename — it embeds the patient name/UUID (see local.redaction).
             logger.warning("Skipping unreadable bundle %s", redact(path.name))
             continue
-        parsed = parser.parse_bundle(bundle)
+        parsed = parser.parse_bundle(bundle, dicom_resolver=resolver)
         for table_name in SILVER_TABLES:
             for record in parsed.get(table_name, []):
                 record["source_file"] = path.name
@@ -77,11 +87,14 @@ def run_pipeline(
     if not labels:
         raise RuntimeError(f"No cohorts found under {bronze_root}/fhir/ — run download first")
 
+    # DICOM header enrichment for ImagingStudy rows (ADR-013); empty index = FHIR-only.
+    dicom_index = DicomIndex(bronze_root / "dicom")
+
     logger.info("Pipeline start: %d cohort(s) via %s", len(labels), platform.name)
     for label in labels:
         files = cohort_files(label, bronze_root)
         logger.info("Cohort %s: parsing %d bundles", label, len(files))
-        records = _parse_cohort(parser, files)
+        records = _parse_cohort(parser, files, dicom_index=dicom_index)
         for name, spec in SILVER_TABLES.items():
             table = spec.build(records[name], ingest_ts)
             platform.write_silver(name, table, mode="merge")

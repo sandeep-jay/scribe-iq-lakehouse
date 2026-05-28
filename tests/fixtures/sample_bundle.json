@@ -560,6 +560,13 @@
       "resource": {
         "resourceType": "ImagingStudy",
         "id": "imaging-001",
+        "identifier": [
+          {
+            "use": "official",
+            "system": "urn:ietf:rfc:3986",
+            "value": "urn:oid:1.2.840.99999999.11111111.222222222222"
+          }
+        ],
         "status": "available",
         "subject": {
           "reference": "urn:uuid:patient-synthetic-001"

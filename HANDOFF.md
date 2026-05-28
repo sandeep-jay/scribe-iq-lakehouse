@@ -6,14 +6,16 @@
 ---
 
 ## Session summary
-Built the Gold layer end-to-end. `local/gold/encounter_summary.py` denormalizes all 10
-Silver tables into `gold.encounter_summary` (one row per encounter) using Polars as a pure
-in-process join engine, assembling against an explicit `GOLD_SCHEMA` with nested struct/
-array types; `local/gold/corpus_manifest.py` writes a lineage + coverage manifest. Ran on
-the full dataset: **143,946 encounter summaries from 1,278 patients in ~5s**, nested Delta
-types + CDC verified. Shipped the corpus contract three ways — a generated JSON Schema
-(`schemas/gold_encounter_summary.json`), a human doc (`docs/CORPUS_CONTRACT.md`), and a
-17-test conformance suite — all kept in sync by ADR-012's generated-first pattern. 103 tests
+Built the Gold layer end-to-end, then ingested the DICOM modality. `local/gold/
+encounter_summary.py` denormalizes all 10 Silver tables into `gold.encounter_summary` (one
+row per encounter) via a pure Polars join engine against an explicit `GOLD_SCHEMA`;
+`corpus_manifest.py` writes lineage + coverage. Then pulled the Coherent `dicom/` (9.3 GiB,
+298 files) + `csv/` (466 MB) prefixes into Bronze and wired pydicom header extraction
+(ADR-013): FHIR↔DICOM linkage by StudyInstanceUID via a pure-parser resolver callback, so 298
+imaging studies now carry real `study_date`/dimensions/slice-thickness (descriptive tags are
+Coherent `UNKNOWN` placeholders → null). Full clean rebuild: **143,946 encounter summaries
+from 1,278 patients** (Silver 2m19s + Gold ~5s), nested Delta types + CDC verified. Corpus
+contract shipped three ways (generated JSON Schema + human doc + conformance test). 114 tests
 passing; ruff/black clean. Fabric notebooks (Session 4) are next.
 
 ---
@@ -32,8 +34,12 @@ passing; ruff/black clean. Fabric notebooks (Session 4) are next.
   `write_gold_manifest()`, plus `read_gold()` on local_lite.
 - `scripts/gen_corpus_schema.py` → `schemas/gold_encounter_summary.json` (`--check` for CI).
 - `docs/CORPUS_CONTRACT.md`, ADR-012, `tests/test_gold_encounter_summary.py` (17 tests).
-- **Full dataset processed → `gold.encounter_summary` Delta table + `gold/_metadata/
-  corpus_manifest.json` on disk (gitignored).**
+- **DICOM modality (ADR-013):** `local/ingest/dicom_index.py` (`DicomIndex`, UID→.dcm),
+  `download_assets()` + `--with-dicom`/`--with-csv`/`--assets-only`,
+  `fhir_parser.parse_bundle(dicom_resolver=...)` + `imaging_study_uid()`, placeholder→null +
+  DA-date normalization, `tests/test_dicom_extraction.py` (11 tests).
+- **Full dataset processed → `gold.encounter_summary` Delta + `gold/_metadata/
+  corpus_manifest.json`; 298 imaging studies DICOM-enriched. All on disk (gitignored).**
 
 **Carried from Session 2 (all still working):**
 - `.venv` `[local,dev]` (now + `jsonschema`); LocalLitePlatform; 7 Silver transforms +
@@ -63,16 +69,26 @@ avg conditions/enc    0.08     avg meds/enc        0.05
 - Nested types (struct/list) round-trip through delta-rs cleanly; full Gold build ~5s.
 - `recent_vitals` / `imaging` are ALWAYS-present structs (members null when absent) so
   consumers don't null-guard the struct itself — check `imaging.has_imaging` / vital members.
+- **Coherent DICOM descriptive tags are synthetic placeholders** (`StudyDescription=UNKNOWN`,
+  `Modality=OT`) → normalized to null; only `study_date`/`rows`/`columns`/`slice_thickness`
+  are real. Of 3,752 imaging studies, only **298** have a `.dcm` file (one per imaging patient).
+  FHIR stays authoritative for modality (ADR-013).
+- **delta-rs MERGE breaks on a whole-table re-update** (every source row matches an existing
+  target row): "matched a target row with multiple source rows". Full re-runs must start from a
+  clean slate — `rm -rf data/silver data/gold` before `--with-gold`. MERGE upsert is fine for
+  incremental per-cohort landing (the path it's actually used for). Both layers rebuild from Bronze.
 
 ---
 
 ## Test status
 ```
-103 passed (venv: .venv/bin/python -m pytest)
+114 passed (venv: .venv/bin/python -m pytest)
   + test_gold_encounter_summary (17): schema/grain, age, vitals(BP from components),
     labs, null-safe sparse encounter, idempotent summary_id, manifest stats,
     contract field-list coverage, JSON Schema currency, per-row JSON Schema validation
-ruff: All checks passed   |   black: 43 files unchanged
+  + test_dicom_extraction (11): UID linkage, placeholder→null, DA-date, FHIR modality,
+    DicomIndex, parse_bundle resolver path, bad-bytes resilience
+ruff: All checks passed   |   black: 45 files unchanged
 doc-sync --check: DATA_DICTIONARY + gold_encounter_summary.json both up to date
 ```
 
@@ -111,14 +127,15 @@ since Gold exists.
 ## Key state
 ```
 LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform implemented
-Storage root: data/ (gitignored) — bronze/ + silver/<10 tables>+ingest_log + gold/encounter_summary + gold/_metadata
-Bronze: 1,280 raw JSON bundles, 4.6 GB
-Silver: 10 Delta tables + ingest_log, CDC, all validations passed
+Storage root: data/ (gitignored) — bronze/{fhir,dicom,csv} + silver/<10>+ingest_log + gold/{encounter_summary,_metadata}
+Bronze: 1,280 FHIR bundles (4.6 GB) + 298 DICOM (.dcm, 9.3 GB) + 16 CSV (466 MB)
+Silver: 10 Delta tables + ingest_log, CDC, all validations passed; imaging 298/3,752 DICOM-enriched
 Gold: encounter_summary (143,946 rows, CDC) + corpus_manifest.json
 Docs: ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT live;
       schemas/gold_encounter_summary.json (gen)
 Contract: v1.0.0 — scribe-iq + clinical-bert-pipeline pin against this
-Tests: 103 passing
+Tests: 114 passing
+Full re-run: rm -rf data/silver data/gold; python -m local.pipeline --with-gold
 Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
 ```
@@ -127,21 +144,25 @@ M5 Max: arriving ~June 2, 2026
 
 ## Files changed this session
 - local/gold/{encounter_summary,corpus_manifest}.py — created
-- local/pipeline.py — build_gold() + CLI flags
+- local/ingest/dicom_index.py — created; local/ingest/download.py — download_assets() + flags
+- local/transforms/fhir_parser.py — dicom_resolver, imaging_study_uid(), placeholder/DA-date norm
+- local/pipeline.py — build_gold() + CLI flags + DicomIndex wiring
 - local/platform/base.py — table_version() + write_gold_manifest()
 - local/platform/local_lite.py — read_gold(), table_version(), write_gold_manifest()
 - scripts/gen_corpus_schema.py — created; schemas/gold_encounter_summary.json — generated
-- docs/CORPUS_CONTRACT.md — created; docs/adr/012-gold-encounter-summary.md — created
+- docs/CORPUS_CONTRACT.md — created; docs/adr/{012-gold-encounter-summary,013-dicom-ingest-and-linkage}.md — created
 - docs/adr/README.md, docs/ARCHITECTURE.md, docs/BENCHMARKS.md — updated
-- tests/test_gold_encounter_summary.py — created (17 tests)
+- tests/test_gold_encounter_summary.py (17) + tests/test_dicom_extraction.py (11) — created
+- tests/fixtures/sample_bundle.json — ImagingStudy gains urn:oid identifier
 - pyproject.toml — jsonschema dev dep
 - .pre-commit-config.yaml — corpus-schema-current hook
 - .claude/commands/session-end.md — corpus schema in doc-sync step
-- CHANGELOG.md — Session 3 section
+- CHANGELOG.md — Session 3 sections (Gold + DICOM)
 
 ## ADRs (running list)
 - ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
-  ADR-011 generated-first docs · ADR-012 Gold encounter_summary (engine/grain/lineage)
+  ADR-011 generated-first docs · ADR-012 Gold encounter_summary (engine/grain/lineage) ·
+  ADR-013 DICOM ingest + FHIR↔DICOM linkage + header extraction
 
 ## Note on settings.json churn
 The harness may append auto-approved Bash permissions to the **tracked**

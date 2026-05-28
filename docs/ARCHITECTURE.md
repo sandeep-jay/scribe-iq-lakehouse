@@ -18,7 +18,7 @@ flowchart TD
     S3["AWS Open Data<br/>s3://synthea-open-data/coherent<br/>(1,280 FHIR bundles, 4.6 GB)"]
 
     subgraph BRONZE["BRONZE — raw, append-only"]
-        B["data/bronze/fhir/cohort=A|B|C/*.json<br/>+ _metadata/manifest.json"]
+        B["data/bronze/fhir/cohort=A|B|C/*.json<br/>+ dicom/*.dcm (headers) + csv/ (reference)<br/>+ _metadata/manifest.json"]
     end
 
     subgraph SILVER["SILVER — Delta, CDC enabled ✅ built"]
@@ -65,7 +65,9 @@ local/
     encounter_summary.py  Silver → gold.encounter_summary; GOLD_SCHEMA + corpus contract
     corpus_manifest.py    Lineage + coverage stats → gold/_metadata/corpus_manifest.json
   validation/      schema_registry.py (rules) + validate.py → silver.ingest_log
-  ingest/          download.py (S3 sync + cohort partition) · bronze_landing · streaming_sim
+  ingest/          download.py (S3 sync: FHIR cohorts + DICOM/CSV assets) · bronze_landing
+    dicom_index.py   StudyInstanceUID → .dcm path; resolver feeding DICOM headers (ADR-013)
+    streaming_sim.py cohort replay + watchdog (Auto Loader analogue)
   pipeline.py      Bronze → Silver → Gold orchestration (run_pipeline · build_gold)
   redaction.py     PHI-safe log references (ADR-010)
 scripts/

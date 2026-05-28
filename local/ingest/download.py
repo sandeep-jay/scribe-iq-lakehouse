@@ -20,7 +20,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-S3_FHIR_PREFIX = "s3://synthea-open-data/coherent/unzipped/fhir/"
+S3_BASE = "s3://synthea-open-data/coherent/unzipped"
+S3_FHIR_PREFIX = f"{S3_BASE}/fhir/"
+S3_DICOM_PREFIX = f"{S3_BASE}/dicom/"  # ~10 GB — enables imaging header extraction (ADR-013)
+S3_CSV_PREFIX = f"{S3_BASE}/csv/"  # ~465 MB — landed for reference; not otherwise processed
 DEFAULT_BRONZE = Path("data/bronze")
 DEFAULT_COHORTS = ("A", "B", "C")
 
@@ -158,15 +161,75 @@ def download_fhir(
     return manifest
 
 
+def download_assets(
+    bronze_root: Path = DEFAULT_BRONZE,
+    dicom: bool = False,
+    csv: bool = False,
+) -> dict[str, dict[str, int]]:
+    """Sync optional Coherent asset prefixes (DICOM, CSV) into Bronze.
+
+    DICOM (~10 GB, 299 files) lands under ``<bronze>/dicom/`` and enables
+    ``silver.imaging_study`` header extraction (ADR-006/013). CSV (~465 MB) lands under
+    ``<bronze>/csv/`` for reference/convenience and is not otherwise processed. Both syncs
+    are idempotent (``aws s3 sync`` skips files already present).
+
+    Args:
+        bronze_root: Bronze layer root.
+        dicom: Sync the DICOM prefix.
+        csv: Sync the CSV prefix.
+
+    Returns:
+        ``{asset: {"file_count": n, "total_bytes": b}}`` for each synced asset, also
+        written to ``<bronze>/_metadata/assets_manifest.json``.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for enabled, prefix, subdir, glob in (
+        (dicom, S3_DICOM_PREFIX, "dicom", "*.dcm"),
+        (csv, S3_CSV_PREFIX, "csv", "*.csv"),
+    ):
+        if not enabled:
+            continue
+        dest = bronze_root / subdir
+        _aws_sync(prefix, dest)
+        files = list(dest.glob(glob))
+        out[subdir] = {
+            "file_count": len(files),
+            "total_bytes": sum(f.stat().st_size for f in files),
+        }
+        logger.info("%s: %d files landed under %s", subdir.upper(), len(files), dest)
+
+    if out:
+        meta_dir = bronze_root / "_metadata"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {"ingested_at": datetime.now(UTC).isoformat(), "assets": out}
+        (meta_dir / "assets_manifest.json").write_text(json.dumps(manifest, indent=2))
+    return out
+
+
 if __name__ == "__main__":
     import argparse
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    ap = argparse.ArgumentParser(description="Download Synthea Coherent FHIR bundles to Bronze")
+    ap = argparse.ArgumentParser(description="Download Synthea Coherent data to Bronze")
     ap.add_argument("--bronze-root", type=Path, default=DEFAULT_BRONZE)
     ap.add_argument("--max-files", type=int, default=None, help="Limit bundle count (dev runs)")
     ap.add_argument("--cohorts", type=int, default=len(DEFAULT_COHORTS))
+    ap.add_argument("--with-dicom", action="store_true", help="Also sync DICOM (~10 GB)")
+    ap.add_argument("--with-csv", action="store_true", help="Also sync CSV exports (~465 MB)")
+    ap.add_argument(
+        "--assets-only",
+        action="store_true",
+        help="Sync only DICOM/CSV (skip FHIR); use with --with-dicom / --with-csv",
+    )
     args = ap.parse_args()
 
-    m = download_fhir(args.bronze_root, max_files=args.max_files, n_cohorts=args.cohorts)
-    print(json.dumps(asdict(m), indent=2))
+    result: dict = {}
+    if not args.assets_only:
+        result = asdict(
+            download_fhir(args.bronze_root, max_files=args.max_files, n_cohorts=args.cohorts)
+        )
+    if args.with_dicom or args.with_csv:
+        result["assets"] = download_assets(
+            args.bronze_root, dicom=args.with_dicom, csv=args.with_csv
+        )
+    print(json.dumps(result, indent=2))

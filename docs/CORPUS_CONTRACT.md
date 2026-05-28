@@ -76,7 +76,7 @@ Built from the entire Synthea Coherent dataset (1,278 patients). See
 | With SOAP note | 143,946 (100%) |
 | With labs | 26,059 |
 | With vitals | 19,830 |
-| With imaging | 3,752 |
+| With imaging | 3,752 (298 with DICOM headers) |
 | With genomics | 419 |
 | With ECG | 0 |
 | Avg conditions / encounter | 0.08 |
@@ -101,6 +101,12 @@ Built from the entire Synthea Coherent dataset (1,278 patients). See
 4. **Vitals coverage is partial** (~14% of encounters) — only encounters with vital-sign
    observations linked to them populate `recent_vitals`. Blood pressure is parsed from the
    Silver `components_json` (systolic LOINC 8480-6 / diastolic 8462-4).
+5. **`imaging.study_description` is null even when `has_imaging` is true.** Imaging metadata
+   comes from FHIR (modality, body site, series count) for all 3,752 studies; the 298 with a
+   downloaded DICOM file additionally carry `study_date` (and Silver-level dimensions /
+   slice thickness). But Coherent's DICOM descriptive tags are placeholder `"UNKNOWN"`, which
+   we normalize to null (ADR-013) — so there is no human-readable study description to ground
+   on. Use `modality` + `body_site_display` for imaging grounding.
 
 ---
 

@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 3 — DICOM ingest + imaging header extraction (ADR-013)
+#### Added
+- `local/ingest/dicom_index.py`: `DicomIndex` maps DICOM `StudyInstanceUID` → local `.dcm`
+  path (the FHIR↔DICOM join key) and serves bytes; `study_uid_from_filename()` parses the
+  Coherent file-name convention. File names embed patient names → never logged raw (ADR-010).
+- `local/ingest/download.py`: `download_assets()` + CLI `--with-dicom` / `--with-csv` /
+  `--assets-only` sync the DICOM (~9.3 GiB, 298 files) and CSV (~466 MB) prefixes into Bronze,
+  writing `_metadata/assets_manifest.json`. CSV is landed for reference; not otherwise processed.
+- `tests/test_dicom_extraction.py`: 11 tests (synthetic in-memory DICOM, no committed binary)
+  — UID linkage, placeholder→null, DA-date formatting, FHIR-authoritative modality, DicomIndex,
+  the parse_bundle resolver path, bad-bytes resilience. 114 tests total.
+- ADR-013: DICOM ingest, FHIR↔DICOM linkage by StudyInstanceUID, header extraction semantics.
+#### Changed
+- `fhir_parser.py`: `parse_bundle(bundle, dicom_resolver=...)` injects DICOM bytes via a
+  callback (parser stays pure — I/O lives in the ingest layer); `imaging_study_uid()` helper;
+  `_extract_dicom_headers` normalizes Coherent placeholder tokens (`UNKNOWN`…) → null and DICOM
+  `DA` dates → ISO; FHIR stays authoritative for `modality`; `dicom_binary_id` = StudyInstanceUID
+  (never the patient-named file); a malformed file is caught per-study (`dicom_extracted=False`).
+- `local/pipeline.py`: builds a `DicomIndex` once and threads the resolver through `_parse_cohort`.
+- `tests/fixtures/sample_bundle.json`: ImagingStudy now carries a real `urn:oid:` identifier.
+#### Full-run result
+- 298 of 3,752 `silver.imaging_study` rows enriched with DICOM `rows`/`columns`/
+  `slice_thickness_mm`/`study_date`; Gold `imaging` struct surfaces `study_date` +
+  `dicom_binary_id` for those encounters. Descriptive tags are placeholder `UNKNOWN` → null
+  (honest limitation, documented in CORPUS_CONTRACT). Clean full rebuild: Silver 2m19s + Gold ~5s.
+#### Note
+- delta-rs MERGE errors on a whole-table re-update (every source row matches); full re-runs
+  build from a clean slate (`rm -rf data/silver data/gold`). MERGE upsert remains for
+  incremental per-cohort landing. Recorded as a pipeline operational note.
+
 ### Session 3 — Gold layer + corpus contract (ADR-012)
 #### Added
 - `local/gold/encounter_summary.py`: pure transform denormalizing all 10 Silver tables →

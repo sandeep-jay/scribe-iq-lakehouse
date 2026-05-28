@@ -26,13 +26,15 @@ pipeline or dataset materially changes.
 
 | Metric | Value |
 |--------|-------|
-| `aws s3 sync` + cohort partition | ~18m36s (network-bound, parallel sync) |
+| FHIR `aws s3 sync` + cohort partition | ~18m36s (network-bound, parallel sync) |
+| DICOM `aws s3 sync` (`--with-dicom`) | 298 files / 9.3 GiB (network-bound; one-time) |
+| CSV `aws s3 sync` (`--with-csv`) | 16 files / 466 MB (reference only, not processed) |
 
 ## Pipeline (Bronze → Silver) — full dataset
 
 | Metric | Value |
 |--------|-------|
-| Wall clock | **2m30s** (128.0s user · 10.2s sys · 91% CPU) |
+| Wall clock | **2m19s** (128.0s user · 7.5s sys · 97% CPU) — includes DICOM header reads for 298 studies |
 | Per cohort (parse + build + MERGE) | A ~50s · B ~46s · C ~54s |
 | Validation + read-back | <1s total |
 | Cohorts | 3 (processed as sequential micro-batches) |
@@ -48,7 +50,7 @@ pipeline or dataset materially changes.
 | soap_note | 143,946 | ~1 note per encounter; S/A/P, no Objective (ADR-005) |
 | procedure | 56,092 | |
 | condition | 15,956 | |
-| imaging_study | 3,752 | FHIR metadata; DICOM headers pending (ADR-006) |
+| imaging_study | 3,752 | FHIR metadata; 298 enriched with DICOM headers (ADR-013) |
 | genomic_report | 419 | `data_limitation` 100% populated; 0 pathogenic (synthetic) |
 | patient | 1,278 | |
 | ecg_metadata | 0 | ECG is Binary waveform, not in FHIR — roadmap Phase 3 |
@@ -76,7 +78,7 @@ Delta table (overwrite + CDC) plus the corpus manifest.
 | With SOAP note | 143,946 (100%) | primary generation anchor |
 | With labs | 26,059 | |
 | With vitals | 19,830 | BP parsed from `components_json` |
-| With imaging | 3,752 | |
+| With imaging | 3,752 | 298 carry DICOM `study_date` (ADR-013) |
 | With genomics | 419 | synthetic (ADR-007) |
 | With ECG | 0 | no ECG in Coherent FHIR |
 | Avg conditions / encounter | 0.08 | encounter-grain; sparse by design (ADR-012 / CORPUS_CONTRACT) |
@@ -98,10 +100,15 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 
 ```bash
 pip install -e ".[local,dev]"                 # or: .venv
-python -m local.ingest.download --bronze-root data/bronze   # ~4.6 GiB, network-bound
-python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m30s) + gold/* (~5s)
+python -m local.ingest.download --bronze-root data/bronze   # FHIR, ~4.6 GiB, network-bound
+python -m local.ingest.download --assets-only --with-dicom --with-csv  # +9.3 GiB DICOM, 466 MB CSV
+python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m19s) + gold/* (~5s)
 python -m local.pipeline --gold-only                        # rebuild Gold from existing Silver
 ```
+
+> Full re-runs build from a clean slate (delta-rs MERGE is for incremental cohort landing,
+> not whole-table re-update); remove `data/silver` + `data/gold` before a full
+> `--with-gold` rebuild. Both are reproducible from Bronze.
 
 ## Methodology & caveats
 

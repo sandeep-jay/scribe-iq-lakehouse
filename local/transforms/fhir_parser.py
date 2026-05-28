@@ -31,6 +31,7 @@ import base64
 import io
 import logging
 import re
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,10 @@ LOINC_QRS_DURATION = "8625-2"
 # LOINC / category hints used to classify a DiagnosticReport.
 _ECG_KEYWORDS = ("ecg", "ekg", "electrocardiogram", "electrocardiographic")
 _GENOMIC_KEYWORDS = ("genetic", "genomic", "gene panel", "dna", "sequencing", "variant")
+
+# Synthetic placeholder tokens in Coherent DICOM headers (e.g. StudyDescription) — these
+# are absent-data markers, not real values, so we normalize them to None (ADR-013).
+_DICOM_PLACEHOLDERS = frozenset({"", "UNKNOWN", "NONE", "ANONYMOUS", "ANONYMIZED"})
 
 # Markdown / classic section headers mapped to the four SOAP buckets.
 # Headers are matched case-insensitively after stripping leading '#' and whitespace.
@@ -170,6 +175,20 @@ def _ref_from(field: Any) -> str:
     return ""
 
 
+def imaging_study_uid(resource: dict) -> str:
+    """Return an ImagingStudy's DICOM StudyInstanceUID, or ``""`` if absent.
+
+    Coherent stores the UID in ``ImagingStudy.identifier[].value`` as ``urn:oid:<uid>``;
+    the matching ``.dcm`` file name ends with the same ``<uid>``. This is the join key
+    between a FHIR ImagingStudy and its DICOM file (ADR-013).
+    """
+    for identifier in resource.get("identifier", []) or []:
+        value = identifier.get("value") or ""
+        if value.startswith("urn:oid:"):
+            return value[len("urn:oid:") :]
+    return ""
+
+
 class FHIRBundleParser:
     """Parses a Synthea Coherent FHIR R4 bundle into typed record dicts.
 
@@ -181,11 +200,19 @@ class FHIRBundleParser:
 
     # ------------------------------------------------------------------ bundle
 
-    def parse_bundle(self, bundle_json: dict) -> dict[str, list[dict]]:
+    def parse_bundle(
+        self,
+        bundle_json: dict,
+        dicom_resolver: Callable[[str], bytes | None] | None = None,
+    ) -> dict[str, list[dict]]:
         """Parse a full bundle into ``{logical_table: [records]}``.
 
         Args:
             bundle_json: A parsed FHIR ``Bundle`` resource (dict).
+            dicom_resolver: Optional callback mapping a DICOM StudyInstanceUID to its
+                raw ``.dcm`` bytes (or ``None`` if no file exists). The caller (the
+                ingest/pipeline layer) owns the I/O; the parser stays pure and only
+                invokes it, then reads headers with ``stop_before_pixels`` (ADR-006/013).
 
         Returns:
             A dict keyed by logical Silver table name (``"patient"``,
@@ -227,7 +254,15 @@ class FHIRBundleParser:
                 out["soap_note"].append(note)
 
         for resource in by_type.get("ImagingStudy", []):
-            out["imaging_study"].append(self.extract_imaging_study(resource))
+            study_uid = imaging_study_uid(resource)
+            dicom_bytes = dicom_resolver(study_uid) if (dicom_resolver and study_uid) else None
+            out["imaging_study"].append(
+                self.extract_imaging_study(
+                    resource,
+                    dicom_binary=dicom_bytes,
+                    dicom_binary_id=study_uid if dicom_bytes else None,
+                )
+            )
 
         # DiagnosticReports are split by kind; other report types (lab panels, H&P
         # notes, death certificates) are intentionally not extracted to Silver here.
@@ -588,7 +623,12 @@ class FHIRBundleParser:
 
     # --------------------------------------------------------- imaging study
 
-    def extract_imaging_study(self, resource: dict, dicom_binary: bytes | None = None) -> dict:
+    def extract_imaging_study(
+        self,
+        resource: dict,
+        dicom_binary: bytes | None = None,
+        dicom_binary_id: str | None = None,
+    ) -> dict:
         """Extract imaging metadata (spec silver.imaging_study).
 
         Two-pass: FHIR ``ImagingStudy`` fields always, plus DICOM header fields
@@ -597,14 +637,25 @@ class FHIRBundleParser:
         Args:
             resource: An ``ImagingStudy`` resource.
             dicom_binary: Optional raw DICOM bytes for header extraction.
+            dicom_binary_id: Safe identifier for the source DICOM (the StudyInstanceUID,
+                never the file name — file names embed the patient name; ADR-010/013).
 
         Returns:
             A merged silver.imaging_study record dict.
         """
         fhir_meta = self._extract_imaging_from_fhir(resource)
         if dicom_binary:
-            fhir_meta.update(self._extract_dicom_headers(dicom_binary))
-            fhir_meta["dicom_extracted"] = True
+            from pydicom.errors import InvalidDicomError
+
+            try:
+                headers = self._extract_dicom_headers(dicom_binary)
+            except InvalidDicomError:
+                # A single malformed file must not abort the run; FHIR metadata stands.
+                logger.warning("Skipping unreadable DICOM header for one imaging study")
+            else:
+                fhir_meta.update(headers)
+                fhir_meta["dicom_binary_id"] = dicom_binary_id
+                fhir_meta["dicom_extracted"] = True
         return fhir_meta
 
     @staticmethod
@@ -656,8 +707,19 @@ class FHIRBundleParser:
         ds = pydicom.dcmread(io.BytesIO(binary_data), stop_before_pixels=True)
 
         def _s(tag: str) -> str | None:
+            """String tag, with Coherent placeholder tokens normalized to None (ADR-013)."""
             val = getattr(ds, tag, None)
-            return str(val) if val is not None else None
+            if val is None:
+                return None
+            text = str(val).strip()
+            return None if text.upper() in _DICOM_PLACEHOLDERS else text
+
+        def _date(tag: str) -> str | None:
+            """DICOM DA tag (``YYYYMMDD``) → ISO ``YYYY-MM-DD`` for downstream date parsing."""
+            val = _s(tag)
+            if val and len(val) == 8 and val.isdigit():
+                return f"{val[:4]}-{val[4:6]}-{val[6:8]}"
+            return val
 
         def _i(tag: str) -> int | None:
             val = getattr(ds, tag, None)
@@ -667,11 +729,12 @@ class FHIRBundleParser:
             val = getattr(ds, tag, None)
             return float(val) if val is not None else None
 
+        # NOTE: ``Modality`` is intentionally NOT read here — FHIR ImagingStudy carries a
+        # more specific modality (MR/DX/CT) than the DICOM file's generic "OT" (ADR-013).
         return {
             "study_description": _s("StudyDescription"),
             "series_description": _s("SeriesDescription"),
-            "study_date": _s("StudyDate"),
-            "modality": _s("Modality") or None,
+            "study_date": _date("StudyDate"),
             "manufacturer": _s("Manufacturer"),
             "magnetic_field_strength": _f("MagneticFieldStrength"),
             "slice_thickness_mm": _f("SliceThickness"),
