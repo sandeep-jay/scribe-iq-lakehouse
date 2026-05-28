@@ -5,6 +5,81 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 5 (in progress) — Fabric end-to-end + dedup fix + Power BI
+Plan: [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md). 7 phases; 1–3 complete, 4 in progress.
+
+#### Added
+- **ADR-019** (Silver MERGE idempotency) — pre-merge target-side dedup guard
+  in `LocalLitePlatform._write_delta`. Fixes the *"matched a target row with
+  multiple source rows"* failure that occurred re-merging into Silver tables
+  written before `dedup_by_key()` was added to every `build_silver_*`. Helpers
+  `_duplicate_row_count` + `_dedup_target` are pyarrow-only; only triggers a
+  rewrite when total ≠ distinct on the PK. Survivor semantics are
+  "some-survivor-wins" (Delta doesn't preserve write order on read) — the
+  following MERGE writes the source's canonical value on top.
+- Regression test `test_merge_dedupes_target_with_legacy_duplicates` in
+  `core/tests/test_local_lite.py` — writes intentionally-duplicate target via
+  raw `write_deltalake`, asserts subsequent `write_silver` MERGE succeeds with
+  canonical source value winning.
+- Real `FabricPlatform` implementation in `fabric/platform.py` (10 methods
+  replacing the Session 4.5 NotImplementedError stubs): schema-enabled OneLake
+  abfss URIs, pa.Table↔Spark round-trip via pandas, `DeltaTable.merge()` with
+  matching ADR-019 dedup guard (Spark equivalent: `dropDuplicates([pk])`),
+  CDC enabled on all writes, manifest via `mssparkutils.fs.put`. All
+  Fabric-runtime imports (`pyspark`, `notebookutils`, `delta.tables`) are
+  lazy inside method bodies — module imports cleanly outside Fabric so the
+  offline contract tests run without Fabric.
+- Real `fabric/deploy/upload_wheel.py` — MSAL Service Principal → Fabric REST
+  v1 client. PUT `/workspaces/{ws}/environments/{env}/staging/libraries`,
+  POST `/publish`, then poll until publish state is `Success` (600 s deadline).
+- `[fabric]` install extra (`msal>=1.28`, `requests>=2.31`) in `pyproject.toml`.
+- `pytest.mark.fabric` marker for behaviour tests that require a real workspace
+  (registered in `[tool.pytest.ini_options]`); 1 such test gated on
+  `FABRIC_TENANT_ID` env var.
+- 2 new offline contract tests in `fabric/tests/test_fabric_platform.py`:
+  `test_storage_path_builds_onelake_uri` + `test_storage_path_rejects_bad_layer`.
+  4 → 5 offline tests; obsolete `test_methods_raise_not_implemented` removed.
+- `docs/roadmap/fabric-execution-plan.md` — 7-phase Session 5 execution plan,
+  linked from `docs/roadmap/MASTER_PLAN.md` and `CLAUDE.md` key files.
+- `.env.example` at repo root — canonical FABRIC_* env-var inventory with
+  capture instructions and consumer list. `.gitignore` updated with
+  `!.env.example` exception so the template tracks while `.env` stays out.
+- `boto3>=1.34` to `fabric/environments/lakehouse_env.yml` — anonymous-mode
+  S3 client for the public Synthea Coherent bucket, supersedes the original
+  S3-shortcut design (Fabric shortcuts require AWS credentials).
+- `fabric/notebooks/00_setup.ipynb` — first Phase 4 notebook (4 verification
+  gates: wheel imports, Spark + workspace ID, FabricPlatform URI, boto3
+  anonymous S3). Follows the 8-cell template with cells 4–8 adapted for
+  setup verification (no Delta write, no `silver.ingest_log` row).
+
+#### Changed
+- `fabric/docs/DEPLOYMENT.md` — rewritten as a step-by-step operator runbook
+  based on the live Phase 3 walkthrough. 6 numbered setup steps with verify
+  lines, Path A (manual UI) and Path B (REST automation) wheel-upload paths,
+  comprehensive Gotchas section ("Manage access" not in Settings, External
+  repositories ≠ Built-in libraries, "+ Add library" stays clickable, SP
+  secret shown only once, lakehouse must be schema-enabled, environment
+  publish takes 2–5 min).
+- `.github/workflows/fabric-deploy.yml` — installs `[fabric]` extra +
+  `fabric-cicd`, runs the real `upload_wheel.py`, and invokes
+  `fabric-cicd smoke-run` against notebook 05 (replacing the placeholder
+  echo from Session 4.5).
+- `HANDOFF.md` Open Decisions row "Silver parse-output deduplication" flipped
+  to DONE — ADR-019.
+
+#### Provisioned (Session 5 Phase 3)
+- Fabric workspace `scribe_iq_lakehouse_fabric` (Central US)
+- Schema-enabled lakehouse `scribe_iq_lakehouse_fabric`
+- Environment `scribe-iq-lakehouse-env` (Runtime 1.3, Spark 3.5, Delta 3.2)
+  with 4 PyPI deps + the `scribe_iq_lakehouse-0.1.0` core wheel published.
+- IDs live in local `.env` (gitignored) / GitHub `fabric-prod` secrets — never
+  in committed files.
+
+#### Tests
+128 passed, 1 skipped (`@pytest.mark.fabric` without `FABRIC_TENANT_ID`). 122
+core + 5 fabric offline + 1 fabric behaviour (skipped). All Phase 1–3 code
+files ruff + black clean.
+
 ### Session 4.5 — Multi-platform repo reorg (`core/` + `fabric/`)
 #### Added
 - **ADR-017** (multi-platform repo layout) and **ADR-018** (CI/CD monorepo, core as wheel).

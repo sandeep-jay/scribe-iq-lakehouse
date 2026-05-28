@@ -66,53 +66,79 @@ install `[fabric]` + `fabric-cicd`, run the real wheel-upload step, and invoke
 `fabric-cicd smoke-run` against notebook 05 per
 [fabric/deploy/fabric_cicd_config.yml](fabric/deploy/fabric_cicd_config.yml).
 
+**Phase 3 — Fabric workspace + lakehouse + Environment + wheel + DEPLOYMENT runbook.**
+Workspace `scribe_iq_lakehouse_fabric` (Central US), schema-enabled lakehouse
+`scribe_iq_lakehouse_fabric`, Environment `scribe-iq-lakehouse-env` (Runtime
+1.3 / Spark 3.5 / Delta 3.2) with 4 PyPI deps published: `pyarrow>=15.0`,
+`pydicom>=2.4`, `python-dateutil>=2.9`, `boto3>=1.34` (anonymous-mode S3
+client — supersedes the original S3-shortcut design because Fabric shortcuts
+require AWS credentials; boto3 in notebook 01 is cleaner and needs no AWS
+account). Core wheel built locally (`python -m build --wheel`) and uploaded
+via Custom libraries → Publish (Path A, manual). Path B (REST via
+`upload_wheel.py`) deferred until Service Principal is registered. New
+`.env` machinery: gitignored `.env` holds the three workspace GUIDs +
+Service Principal slots; `.env.example` is the canonical inventory of
+`FABRIC_*` env vars (capture instructions per variable, "who reads this"
+list). [fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYMENT.md) rewritten as
+the full operator runbook: 6 numbered steps, ✅ verify line per step,
+Gotchas section capturing every UI confusion we hit live ("Manage access"
+not in Settings, External repositories ≠ Built-in, "+ Add library" stays
+clickable, SP secret shown only once, schema-enabled lakehouse requirement,
+publish takes 2–5 min).
+
+**Phase 4 (in progress) — notebook 00 authored.**
+[fabric/notebooks/00_setup.ipynb](fabric/notebooks/00_setup.ipynb) is the
+lightest verification notebook — zero writes, 4 gates: wheel imports
+(`from core.* + fabric.*` succeed and factory returns `FabricPlatform`),
+Spark + workspace ID reachable via `mssparkutils`, `FabricPlatform.storage_path()`
+URI shape matches the schema-enabled OneLake layout, and `boto3` anonymous
+listing of `s3://synthea-open-data/coherent/` works. Follows the 8-cell
+template ([.claude/rules/notebooks.md](.claude/rules/notebooks.md)) with
+cells 4–8 adapted for setup verification (no `silver.ingest_log` row since
+nothing was ingested). Display cell at the end is the screenshot target
+for `00_workspace_overview`. Notebooks 01–10 + 11 pending — authored in
+sequence as each prior one runs green and reveals any FabricPlatform
+adjustments needed.
+
 **Tests:** 128 passed + 1 skipped (`@pytest.mark.fabric` correctly skipped
 without a workspace). 122 core + 5 fabric offline + 1 fabric behaviour
-(skipped). All Phase 1+2 files ruff + black clean. The 10 remaining ruff
-warnings are pre-existing Session 4.5 stub files (`fabric/scripts/capture_lineage.py`,
-docs/yml files) not touched in Phase 2.
+(skipped). All Phase 1–3 code files ruff + black clean.
 
 ## Next session — start here
 
-**Phase 3 needs you (~30 min in the Fabric UI):**
+**Two-step unblock before notebook 00 can run in Fabric:**
 
-1. Create Fabric workspace `scribe-iq-lakehouse` (or your preferred name).
-2. Create a **schema-enabled Lakehouse** named `scribe_iq` (schema-enabled is
-   required by the storage layout `Tables/<layer>/<table>` used in
-   `FabricPlatform.storage_path`; see
-   [fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYMENT.md)).
-3. Create an S3 shortcut from `Files/bronze/coherent_source/` →
-   `s3://synthea-open-data/coherent/` (public bucket, no creds).
-4. Configure Git Integration → repo branch `main`, folder `/fabric/notebooks/`
-   (Session 5 will populate this folder in Phase 4).
-5. Create Environment `scribe-iq-env`, attach to the Lakehouse.
-6. Service Principal: register an Azure AD app, grant Contributor on workspace,
-   capture `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`,
-   `FABRIC_WORKSPACE_ID`, `FABRIC_ENVIRONMENT_ID`. Put them in the GitHub
-   `fabric-prod` Environment secrets.
-7. Build the core wheel and upload it:
+1. **Add git remote + push.** No `origin` configured yet — Fabric Git
+   Integration needs a GitHub remote. Create the repo on GitHub if it
+   doesn't exist (private is fine — Fabric Git Integration supports it
+   when you sign in with a GitHub account that has access), then:
    ```bash
-   python -m build --wheel --outdir dist/
-   FABRIC_TENANT_ID=… FABRIC_CLIENT_ID=… FABRIC_CLIENT_SECRET=… \
-   FABRIC_WORKSPACE_ID=… FABRIC_ENVIRONMENT_ID=… \
-     python fabric/deploy/upload_wheel.py \
-       --wheel dist/scribe_iq_lakehouse-0.1.0-py3-none-any.whl \
-       --environment-id "$FABRIC_ENVIRONMENT_ID"
+   git remote add origin git@github.com:<your-user>/scribe-iq-lakehouse.git
+   git push -u origin main
    ```
-8. **Screenshot `00_workspace_overview` before leaving the UI.**
+2. **Wire Fabric Git Integration.** Workspace settings → Git integration
+   → Connect → repo, branch `main`, folder `/fabric/notebooks`, direction
+   Bidirectional. `00_setup.ipynb` will appear in the workspace after first
+   sync. Open it, attach the lakehouse + environment via top bar if not
+   already, **Run all cells**, screenshot the `display()` cell as
+   `00_workspace_overview`.
 
-When Phase 3 is done, ping me and I'll author Phase 4 (notebooks 00–10) as
-`.ipynb` JSON files committed under `fabric/notebooks/` — you'll only need to
-open them in Fabric and run, capturing screenshots as you go.
+If all 4 gates in 00_setup pass, ping me and I author
+`01_bronze_ingest.ipynb` (boto3 anonymous → `Files/bronze/fhir/cohort=*/`,
+~5–10 min runtime depending on whether we stream a sample or the full 1,278
+patients). Bug in any gate → paste the stack trace, I fix
+`fabric/platform.py`, rebuild the wheel, you re-upload + Publish, re-run.
 
-**Phases 4–7 work breakdown:**
-- **4 (Notebooks 00–10):** Claude authors the `.ipynb` files offline. You run
-  them in Fabric and capture screenshots.
-- **5 (Data Pipeline):** You drag-and-drop in the Fabric UI; export JSON; we
-  commit to `fabric/pipelines/medallion.json`.
-- **6 (Exploratory notebook):** Claude authors `.ipynb`. You run + screenshot.
-- **7 (Power BI):** You build in Power BI Desktop (Direct Lake on the SQL
-  endpoint); save as `.pbip` project; commit `fabric/powerbi/scribe_iq.pbip`.
+**Phases 4 (cont.) → 7 unchanged from the plan**
+([docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)).
+Each Phase 4 notebook follows the 00 → 10 sequence in
+[.claude/rules/notebooks.md](.claude/rules/notebooks.md). Phase 4 ends when
+notebook 10 (Gold validation) prints contract version 1.1.0 and 143,946
+encounter rows from your Fabric Gold table.
+
+**Phase 3d (deferred):** Service Principal registration → enables REST wheel
+upload + the CI workflow. ~20 min of Azure work. Walk-through in
+[fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYMENT.md) Step 5a/5b.
 
 ---
 
