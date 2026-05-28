@@ -1,11 +1,120 @@
-# HANDOFF — Session 4.5 (Multi-platform reorg before Fabric)
+# HANDOFF — Session 5 (Fabric end-to-end + dedup fix + Power BI)
 **Date:** 2026-05-28
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
+**Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md) — 7 phases
 
 ---
 
-## Session 4.5 summary (this update)
+## Session 5 summary so far
+
+Started against an approved 7-phase plan
+([docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md))
+that delivers the full Fabric tier end-to-end plus Power BI, with a Silver-MERGE
+dedup defect closed up front. **Phases 1 and 2 complete** (the work that
+doesn't need the Fabric workspace); Phase 3 onward needs the workspace + Power
+BI Desktop, which is your hands-on work.
+
+**Phase 1 — Silver MERGE idempotency (ADR-019).** Re-running cohorts through
+the CLI or Dagster on already-populated Silver tables used to fail with
+delta-rs's *"matched a target row with multiple source rows"* whenever the
+target had legacy duplicate primary keys (from OVERWRITE writes made before
+`dedup_by_key()` landed in every `build_silver_*`). Source-side dedup was
+already in place; the gap was target-side. Fix landed in
+[core/platform/local_lite.py:_write_delta](core/platform/local_lite.py): when
+mode="merge" and the target Delta exists, count distinct PKs via
+`pc.count_distinct`, and if dups are present, OVERWRITE-rewrite the deduped
+target with CDC enabled before invoking MERGE. Helpers `_duplicate_row_count`
+and `_dedup_target` are pyarrow-only (no polars/duckdb dep). New regression
+test `test_merge_dedupes_target_with_legacy_duplicates` in
+[core/tests/test_local_lite.py](core/tests/test_local_lite.py) writes a dup
+target via raw `write_deltalake`, then asserts that a subsequent `write_silver`
+MERGE succeeds and the canonical source value wins. ADR-019 documents the
+"some-survivor-wins" semantics for the target dedup (Delta does not preserve
+write order on read — so the rewrite picks a deterministic-but-arbitrary
+survivor, and the following MERGE writes the source's canonical value on top).
+HANDOFF Open Decisions row for "Silver parse-output deduplication" flipped to
+DONE — ADR-019.
+
+**Phase 2 — FabricPlatform real impl + REST wheel upload + CI smoke step.**
+Replaced all 10 `NotImplementedError` stubs in [fabric/platform.py](fabric/platform.py)
+with real implementations: schema-enabled OneLake URIs
+(`abfss://<ws>@onelake.dfs.fabric.microsoft.com/<lh>.Lakehouse/Tables/<layer>/<table>`
+for Delta, `.../Files/bronze/...` for raw FHIR JSON), `pa.Table ↔ Spark
+DataFrame` round-trip via pandas, `DeltaTable.forPath(...).merge(...)` with the
+**same ADR-019 target-dedup guard** (Spark equivalent: `dropDuplicates([pk])`
+rewrite when total ≠ distinct), CDC enabled on every write via
+`delta.enableChangeDataFeed=true`, manifest written through
+`mssparkutils.fs.put`. All Fabric-runtime imports (`pyspark`,
+`notebookutils.mssparkutils`, `delta.tables`) are lazy inside their call
+sites, so the module imports cleanly in any environment (verified: contract
+tests run offline, no Fabric runtime needed). Constructor accepts optional
+`workspace_id`/`lakehouse_name`/`spark` overrides for tests. Contract suite
+extended from 4 → 5 offline tests (added `test_storage_path_builds_onelake_uri`
++ `test_storage_path_rejects_bad_layer`; removed the now-obsolete
+`test_methods_raise_not_implemented`) plus a new `@pytest.mark.fabric`
+behaviour test that round-trips through a real workspace when
+`FABRIC_TENANT_ID` is present, skipped otherwise. Marker registered in
+`pyproject.toml`. New `[fabric]` install extra (`msal`, `requests`) added so
+deploy helpers and CI install only what they need.
+[fabric/deploy/upload_wheel.py](fabric/deploy/upload_wheel.py) is now a real
+MSAL Service Principal → Fabric REST v1 client (PUT
+`/workspaces/{ws}/environments/{env}/staging/libraries`, POST `/publish`, then
+poll until publish state is `Success` or 600 s deadline). Workflow updated
+([.github/workflows/fabric-deploy.yml](.github/workflows/fabric-deploy.yml)) to
+install `[fabric]` + `fabric-cicd`, run the real wheel-upload step, and invoke
+`fabric-cicd smoke-run` against notebook 05 per
+[fabric/deploy/fabric_cicd_config.yml](fabric/deploy/fabric_cicd_config.yml).
+
+**Tests:** 128 passed + 1 skipped (`@pytest.mark.fabric` correctly skipped
+without a workspace). 122 core + 5 fabric offline + 1 fabric behaviour
+(skipped). All Phase 1+2 files ruff + black clean. The 10 remaining ruff
+warnings are pre-existing Session 4.5 stub files (`fabric/scripts/capture_lineage.py`,
+docs/yml files) not touched in Phase 2.
+
+## Next session — start here
+
+**Phase 3 needs you (~30 min in the Fabric UI):**
+
+1. Create Fabric workspace `scribe-iq-lakehouse` (or your preferred name).
+2. Create a **schema-enabled Lakehouse** named `scribe_iq` (schema-enabled is
+   required by the storage layout `Tables/<layer>/<table>` used in
+   `FabricPlatform.storage_path`; see
+   [fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYMENT.md)).
+3. Create an S3 shortcut from `Files/bronze/coherent_source/` →
+   `s3://synthea-open-data/coherent/` (public bucket, no creds).
+4. Configure Git Integration → repo branch `main`, folder `/fabric/notebooks/`
+   (Session 5 will populate this folder in Phase 4).
+5. Create Environment `scribe-iq-env`, attach to the Lakehouse.
+6. Service Principal: register an Azure AD app, grant Contributor on workspace,
+   capture `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`,
+   `FABRIC_WORKSPACE_ID`, `FABRIC_ENVIRONMENT_ID`. Put them in the GitHub
+   `fabric-prod` Environment secrets.
+7. Build the core wheel and upload it:
+   ```bash
+   python -m build --wheel --outdir dist/
+   FABRIC_TENANT_ID=… FABRIC_CLIENT_ID=… FABRIC_CLIENT_SECRET=… \
+   FABRIC_WORKSPACE_ID=… FABRIC_ENVIRONMENT_ID=… \
+     python fabric/deploy/upload_wheel.py \
+       --wheel dist/scribe_iq_lakehouse-0.1.0-py3-none-any.whl \
+       --environment-id "$FABRIC_ENVIRONMENT_ID"
+   ```
+8. **Screenshot `00_workspace_overview` before leaving the UI.**
+
+When Phase 3 is done, ping me and I'll author Phase 4 (notebooks 00–10) as
+`.ipynb` JSON files committed under `fabric/notebooks/` — you'll only need to
+open them in Fabric and run, capturing screenshots as you go.
+
+**Phases 4–7 work breakdown:**
+- **4 (Notebooks 00–10):** Claude authors the `.ipynb` files offline. You run
+  them in Fabric and capture screenshots.
+- **5 (Data Pipeline):** You drag-and-drop in the Fabric UI; export JSON; we
+  commit to `fabric/pipelines/medallion.json`.
+- **6 (Exploratory notebook):** Claude authors `.ipynb`. You run + screenshot.
+- **7 (Power BI):** You build in Power BI Desktop (Direct Lake on the SQL
+  endpoint); save as `.pbip` project; commit `fabric/powerbi/scribe_iq.pbip`.
+
+---
 
 Restructured the repo into two top-level domains before starting Session 5 (Fabric) —
 `core/` (platform-agnostic kernel + LocalLite + Dagster + CLI + tests + scripts) and
@@ -30,6 +139,12 @@ contract). Planning doc: [docs/roadmap/multi-platform-reorg.md](docs/roadmap/mul
 in `fabric/notebooks/` importing `from core.transforms…`. Wire `fabric/deploy/upload_wheel.py`
 against the Fabric REST API. Configure workspace Git Integration → `/fabric/notebooks/`.
 Capture screenshots per `fabric/docs/SCREENSHOTS.md` before trial expires (~11 days).
+
+## Session 4.5 summary (prior — preserved below for context)
+
+Restructured the repo into `core/` + `fabric/` before Session 5. See
+[docs/roadmap/multi-platform-reorg.md](docs/roadmap/multi-platform-reorg.md)
+and ADR-017/018 for the full rationale.
 
 ## Working / In progress / Blocked (Session 4.5)
 
@@ -401,7 +516,7 @@ surfaces, one transform tier" payoff.
 | Dagster install extra | `[dev]` vs `[orchestration]` | `[orchestration]` (keep CI minimal) | DONE |
 | Run Dagster on Fabric? | yes vs local-only | Local-only — Fabric uses Data Factory | DONE — ADR-015 "Neutral" |
 | Fabric platform impl | Spark in FabricPlatform vs reuse local | Implement FabricPlatform I/O | Session 5 |
-| Silver parse-output deduplication | dedupe in `extract_*` vs `build_*` vs leave (clean-slate workaround) | Dedupe in `build_*` (single bottleneck; preserves extract simplicity) | OPEN — discovered Session 4 (MERGE re-run on populated tables fails: source dups × target dups → "matched a target row with multiple source rows"). Needs ADR-017 + the fix. |
+| Silver MERGE idempotency on dirty target | dedupe in `extract_*` vs `build_*` vs detect-and-rewrite in `_write_delta` | Detect-and-rewrite in `_write_delta` (source side already deduped; defect is target-side from legacy OVERWRITE) | DONE — ADR-019 (Session 5 Phase 1). `_write_delta` now reads target, counts dups via `pc.count_distinct`, and OVERWRITE-rewrites deduped before MERGE when dups > 0. Regression test `test_merge_dedupes_target_with_legacy_duplicates` pins the behaviour. CLI + Dagster re-runs no longer need `rm -rf data/silver`. |
 | Portfolio video timing | Record now vs after Fabric vs after dedup fix | Record now — demo artifacts are stable, won't get better by waiting | OPEN — `docs/demo/PLAYBOOK.md` ready when you are |
 
 ---
