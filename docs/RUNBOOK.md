@@ -2,14 +2,14 @@
 
 Operational procedures for ingesting, building, verifying, and troubleshooting the lakehouse
 on the `local_lite` platform (Polars + delta-rs, zero cloud). The local stack ships with two
-execution surfaces — the `local.pipeline` CLI (default, dependency-light, the CI path) and
-a **Dagster** asset graph (`orchestration/`, ADR-015/016, optional `[orchestration]` extra);
+execution surfaces — the `core.surfaces.cli.pipeline` CLI (default, dependency-light, the CI path) and
+a **Dagster** asset graph (`core/orchestration/dagster/`, ADR-015/016, optional `[orchestration]` extra);
 both reuse the same pure transforms. Fabric procedures land with the notebooks in Session 5.
 For *why* the system is shaped this way, see [ARCHITECTURE.md](ARCHITECTURE.md) and the
 [ADRs](adr/README.md); for reference numbers, see [BENCHMARKS.md](BENCHMARKS.md).
 
 > All commands assume the repo root and an activated venv (`source .venv/bin/activate`). If you
-> haven't activated it, prefix with `.venv/bin/` (e.g. `.venv/bin/python -m local.pipeline`).
+> haven't activated it, prefix with `.venv/bin/` (e.g. `.venv/bin/python -m core.surfaces.cli.pipeline`).
 
 ---
 
@@ -57,13 +57,13 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[local,dev]"
 
 # 2. Land FHIR into Bronze (~18 min, network-bound; partitions into cohorts A/B/C)
-python -m local.ingest.download --bronze-root data/bronze
+python -m core.ingest.download --bronze-root data/bronze
 
 # 3. (Optional) Land DICOM + CSV assets (~10 GB; enables imaging header extraction)
-python -m local.ingest.download --assets-only --with-dicom --with-csv
+python -m core.ingest.download --assets-only --with-dicom --with-csv
 
 # 4. Build Bronze → Silver → Gold (~2.5 min Silver + ~6.5 s Gold)
-python -m local.pipeline --with-gold
+python -m core.surfaces.cli.pipeline --with-gold
 
 # 5. Verify (see §5)
 ```
@@ -77,8 +77,8 @@ Step 4 prints a JSON summary of per-table row counts and the Gold corpus stats.
 ### FHIR bundles
 
 ```bash
-python -m local.ingest.download --bronze-root data/bronze        # full dataset (1,280 files)
-python -m local.ingest.download --max-files 30                   # dev subset (fast)
+python -m core.ingest.download --bronze-root data/bronze        # full dataset (1,280 files)
+python -m core.ingest.download --max-files 30                   # dev subset (fast)
 ```
 
 Bundles download flat, then partition **round-robin** into `cohort=A|B|C` (balanced, order-
@@ -88,7 +88,7 @@ independent samples — the local analogue of streaming micro-batches). A manife
 ### DICOM + CSV assets (optional)
 
 ```bash
-python -m local.ingest.download --assets-only --with-dicom --with-csv
+python -m core.ingest.download --assets-only --with-dicom --with-csv
 ```
 
 - **DICOM** (~9.3 GB, 298 files) → `data/bronze/dicom/`. Enables `silver.imaging_study` header
@@ -107,7 +107,7 @@ If you skip DICOM, the pipeline still runs — imaging rows simply keep FHIR-onl
 ### Full Bronze → Silver → Gold
 
 ```bash
-python -m local.pipeline --with-gold
+python -m core.surfaces.cli.pipeline --with-gold
 ```
 
 Per cohort: parse bundles → build all 10 Silver tables → MERGE-upsert into Delta (DICOM headers
@@ -118,7 +118,7 @@ with its corpus manifest.
 ### Gold only (Silver already built)
 
 ```bash
-python -m local.pipeline --gold-only
+python -m core.surfaces.cli.pipeline --gold-only
 ```
 
 Reads the existing Silver tables and rebuilds `gold.encounter_summary` + manifest (~6.5 s). Use
@@ -127,8 +127,8 @@ after changing only Gold logic.
 ### Single cohort / incremental
 
 ```bash
-python -m local.pipeline --cohort A           # process one cohort (MERGE-upsert)
-python -m local.pipeline --cohort A --cohort B # process several
+python -m core.surfaces.cli.pipeline --cohort A           # process one cohort (MERGE-upsert)
+python -m core.surfaces.cli.pipeline --cohort A --cohort B # process several
 ```
 
 MERGE upsert means re-landing a cohort updates its rows in place — the intended path for
@@ -138,7 +138,7 @@ incremental ingest.
 
 ```bash
 rm -rf data/silver data/gold
-python -m local.pipeline --with-gold
+python -m core.surfaces.cli.pipeline --with-gold
 ```
 
 **Required for a whole-dataset re-run** (see [Troubleshooting](#troubleshooting)). Silver and
@@ -146,7 +146,7 @@ Gold are derived data and always reproducible from Bronze, so deleting them is s
 
 ### Streaming simulation
 
-`local/ingest/streaming_sim.py` replays cohort partitions one at a time with a filesystem
+`core/ingest/streaming_sim.py` replays cohort partitions one at a time with a filesystem
 watchdog — the local stand-in for Fabric Auto Loader (spec §5.2). It is a library used by the
 pipeline/tests, not a standalone CLI.
 
@@ -218,7 +218,7 @@ For recording a portfolio demo video around it, see [`docs/demo/PLAYBOOK.md`](de
 
 ## 6. Run via Dagster (optional)
 
-The medallion is also exposed as a Dagster software-defined asset graph in `orchestration/`
+The medallion is also exposed as a Dagster software-defined asset graph in `core/orchestration/dagster/`
 ([ADR-015](adr/015-dagster-local-orchestration.md), [ADR-016](adr/016-dagster-asset-graph.md))
 — a richer, observable execution surface alongside the CLI. The same pure transforms run
 under both; only the orchestration layer differs.
@@ -327,8 +327,8 @@ pre-commit ([ADR-011](adr/011-generated-first-docs.md)). Regenerate after changi
 schema, a validation rule, or the Gold schema/contract:
 
 ```bash
-python scripts/gen_data_dictionary.py      # docs/DATA_DICTIONARY.md
-python scripts/gen_corpus_schema.py        # schemas/gold_encounter_summary.json
+python core/scripts/gen_data_dictionary.py      # docs/DATA_DICTIONARY.md
+python core/scripts/gen_corpus_schema.py        # schemas/gold_encounter_summary.json
 # CI / pre-commit run the read-only --check variants and fail on drift.
 ```
 
@@ -340,14 +340,14 @@ Never hand-edit those two files; durable per-column prose goes in the generator'
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `DeltaError: MERGE matched a target row with multiple source rows` | Full re-run on top of existing tables — MERGE upsert is for *incremental* landing, not whole-table re-update (every source row matches) | `rm -rf data/silver data/gold` then `python -m local.pipeline --with-gold` (clean slate; rebuilds from Bronze) |
-| `RuntimeError: No cohorts found under .../fhir/` | Bronze not populated | Run `python -m local.ingest.download` first |
+| `DeltaError: MERGE matched a target row with multiple source rows` | Full re-run on top of existing tables — MERGE upsert is for *incremental* landing, not whole-table re-update (every source row matches) | `rm -rf data/silver data/gold` then `python -m core.surfaces.cli.pipeline --with-gold` (clean slate; rebuilds from Bronze) |
+| `RuntimeError: No cohorts found under .../fhir/` | Bronze not populated | Run `python -m core.ingest.download` first |
 | `RuntimeError: AWS CLI not found on PATH` | AWS CLI missing | Install AWS CLI (only ingest needs it; tests/rebuilds don't) |
-| Imaging DICOM columns all null / `dicom_extracted = false` | DICOM prefix not pulled | `python -m local.ingest.download --assets-only --with-dicom`, then rebuild Silver |
+| Imaging DICOM columns all null / `dicom_extracted = false` | DICOM prefix not pulled | `python -m core.ingest.download --assets-only --with-dicom`, then rebuild Silver |
 | `Skipping unreadable DICOM header for one imaging study` (warning) | A malformed `.dcm` | Non-fatal by design — FHIR metadata stands for that study ([ADR-013](adr/013-dicom-ingest-and-linkage.md)) |
 | `imaging.study_description` is null even with DICOM | Coherent ships placeholder `UNKNOWN` description tags, normalized to null ([ADR-013](adr/013-dicom-ingest-and-linkage.md)) | Expected — ground imaging on `modality` + `body_site_display` |
 | `active_conditions` huge (avg ~9.6) | As-of-date problem list incl. Synthea SDOH/social "conditions" ([ADR-014](adr/014-problem-list-as-of-date.md)) | Expected — faithful to source |
-| `DATA_DICTIONARY.md is out of date` (test/commit fails) | Silver schema/rule changed without regen | `python scripts/gen_data_dictionary.py` (and `gen_corpus_schema.py`) |
+| `DATA_DICTIONARY.md is out of date` (test/commit fails) | Silver schema/rule changed without regen | `python core/scripts/gen_data_dictionary.py` (and `gen_corpus_schema.py`) |
 | Out of disk during DICOM pull | 9.3 GB of `.dcm` | DICOM is optional and re-pullable from S3; safe to delete `data/bronze/dicom` |
 | `.claude/settings.json` keeps showing modified | Harness appends auto-approved permissions to the tracked file | Move them to gitignored `.claude/settings.local.json`, `git restore` the tracked file |
 | `ModuleNotFoundError: No module named 'dagster'` when running `dagster dev` or `tests/test_dagster_defs.py` | `[orchestration]` extra not installed (deliberately optional) | `pip install -e ".[local,dev,orchestration]"`; the test file uses `importorskip` so the rest of the suite still runs |

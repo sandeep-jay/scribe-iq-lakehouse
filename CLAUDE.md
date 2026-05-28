@@ -19,47 +19,60 @@ Produces: gold.encounter_summary → scribe-iq (RAG) + clinical-bert-pipeline (N
 Upstream of: scribe-iq (replaces 19-patient dev corpus with 1,500-patient corpus)
 
 ## Architecture principles
-- Platform abstraction: ALL cloud I/O via local/platform/ — never directly in transforms/
+- Two top-level domains: `core/` (platform-agnostic + local execution surface)
+  and `fabric/` (Fabric-specific impl + notebooks + deploy). Future Databricks
+  and AWS land as siblings to `fabric/`. See ADR-017, docs/roadmap/multi-platform-reorg.md
+- One-way dependency: `fabric/` → `core/`. `core/` NEVER imports from `fabric/`,
+  `databricks/`, or `aws/`. Enforced by transform/notebook rules below.
+- `core/` is a versioned wheel — every platform tier consumes it as a library,
+  not source files (ADR-018).
+- Platform abstraction: ALL cloud I/O via core/platform/ — never directly in transforms/
 - Arrow interchange: transforms return pa.Table, never Spark DataFrames or Polars frames
-- Pure transforms: no file paths, no platform imports in local/transforms/
-- Notebooks import from local/transforms/ — zero duplicate logic
+- Pure transforms: no file paths, no platform imports in core/transforms/
+- Notebooks import from core.transforms — zero duplicate logic
 - Every notebook follows the 8-cell documentation template
 - Full spec: docs/roadmap/scribe-iq-lakehouse-spec.md
 
 ## Non-negotiables
 1. Never hardcode OneLake paths — always platform.storage_path()
-2. Never import Fabric/Spark in local/transforms/
-3. Every new transform gets a test in tests/ alongside implementation
-4. Every architectural decision gets an ADR in docs/adr/
-5. CDC enabled on all Silver tables: delta.enableChangeDataFeed = true
-6. data_limitation column always populated in silver.genomic_report
-7. pydicom stop_before_pixels=True everywhere — never load pixel data
-8. No credentials in notebooks — Fabric Environment Variables or Key Vault only
-9. Session ends with updated HANDOFF.md
-10. Logs never contain raw patient/encounter identifiers or bundle filenames —
-    redact identifier-bearing values via local.redaction.redact() (ADR-010)
+2. Never import Fabric/Spark in core/transforms/
+3. `core/` never imports from `fabric/`, `databricks/`, or `aws/` (one-way dependency)
+4. Every new transform gets a test in core/tests/ alongside implementation
+5. Every architectural decision gets an ADR in docs/adr/
+6. CDC enabled on all Silver tables: delta.enableChangeDataFeed = true
+7. data_limitation column always populated in silver.genomic_report
+8. pydicom stop_before_pixels=True everywhere — never load pixel data
+9. No credentials in notebooks — Fabric Environment Variables or Key Vault only
+10. Session ends with updated HANDOFF.md
+11. Logs never contain raw patient/encounter identifiers or bundle filenames —
+    redact identifier-bearing values via core.redaction.redact() (ADR-010)
 
 ## Session protocol
 START: Read HANDOFF.md → state current status in 3 sentences → begin first task
 END:   HANDOFF.md → CHANGELOG.md → sync docs (regen DATA_DICTIONARY; update
        ARCHITECTURE/BENCHMARKS/CORPUS_CONTRACT if changed) → pytest → pending ADRs → commit
-       Generated docs: only scripts/gen_data_dictionary.py writes (one file); pre-commit
+       Generated docs: only core/scripts/gen_data_dictionary.py writes (one file); pre-commit
        `--check` is read-only. Never hand-bulldoze a doc — surface conflicts (ADR-011).
 
 ## Key files
   docs/roadmap/scribe-iq-lakehouse-spec.md   Full implementation spec
   docs/roadmap/MASTER_PLAN.md                Cross-repo weekend execution plan
+  docs/roadmap/multi-platform-reorg.md       Repo layout + CI/CD model (ADR-017/018)
   docs/adr/                                  ADRs — read before touching architecture
   HANDOFF.md                                 Current session state (updated every session)
   CHANGELOG.md                               All meaningful changes
-  local/platform/base.py                     Platform abstraction interface
-  local/platform/local_lite.py               LocalLitePlatform (Polars + delta-rs)
-  local/transforms/                          Engine-agnostic transform logic (pure Python)
-  local/transforms/registry.py               Silver table → schema/key/build mapping
-  local/validation/                          Schema registry + quality checks → ingest_log
-  local/pipeline.py                          Local Bronze → Silver orchestration
-  local/redaction.py                         PHI-safe log references (ADR-010)
-  fabric/notebooks/                          Fabric execution notebooks (00-10)
+  core/platform/base.py                      Platform abstraction interface (ADR-002)
+  core/platform/local_lite.py                LocalLitePlatform (Polars + delta-rs)
+  core/transforms/                           Engine-agnostic transform logic (pure Python)
+  core/transforms/registry.py                Silver table → schema/key/build mapping
+  core/validation/                           Schema registry + quality checks → ingest_log
+  core/orchestration/dagster/                Dagster asset graph (local-only, ADR-015/016)
+  core/surfaces/cli/pipeline.py              Local Bronze → Silver → Gold CLI orchestration
+  core/redaction.py                          PHI-safe log references (ADR-010)
+  fabric/platform.py                         FabricPlatform (consumes core via wheel)
+  fabric/notebooks/                          Fabric execution notebooks (00–10)
+  fabric/deploy/                             fabric-cicd config + wheel upload helpers
+  .github/workflows/                         core-build · core-pr-tests · fabric-deploy
 
 ## Claude Code config
   .claude/settings.json        Tracked: curated allow globs + deny + hooks (portable paths)

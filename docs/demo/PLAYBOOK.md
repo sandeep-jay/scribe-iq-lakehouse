@@ -8,7 +8,7 @@ artifacts                                       beat in the video
 ─────────────────────────────────────────       ─────────────────
 docs/demo/notebooks/demo.duckdb (DuckDB UI) →   "look at the data shape, in SQL"
 orchestration/  (Dagster UI)                →   "look at the asset graph + sensor"
-scripts/demo_walkthrough.py                 →   "look at one patient end-to-end"
+core/scripts/demo_walkthrough.py                 →   "look at one patient end-to-end"
 ```
 
 Target length: **90 seconds for LinkedIn**, **3 minutes for portfolio site**.
@@ -189,8 +189,8 @@ Sequence: **Take 1 (hook) → Take 2 (raw) → architecture diagram still (5s) �
 | `docs/demo/notebooks/demo_notebook.sql` | 20-cell SQL source |
 | `docs/demo/notebooks/demo.duckdb` | Pre-loaded DuckDB UI notebook (local convenience) |
 | `docs/demo/notebooks/README.md` | How to open / regenerate |
-| `scripts/demo_walkthrough.py` | One-patient CLI walkthrough (rich-formatted) |
+| `core/scripts/demo_walkthrough.py` | One-patient CLI walkthrough (rich-formatted) |
 | `local/preview.py` | Shared preview helpers (same renderings as Dagster UI) |
-| `orchestration/` | Dagster asset graph + checks (ADR-015, ADR-016) |
+| `core/orchestration/dagster/` | Dagster asset graph + checks (ADR-015, ADR-016) |
 | `docs/RUNBOOK.md` | Ops procedures (build, verify, troubleshoot) |
 | `docs/CORPUS_CONTRACT.md` | The data contract this demo proves |

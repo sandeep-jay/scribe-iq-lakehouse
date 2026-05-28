@@ -18,3 +18,5 @@
 | 014 | Problem-list-as-of-date for active_conditions/medications | Accepted | 2026-05-27 |
 | 015 | Dagster for local pipeline orchestration | Accepted | 2026-05-27 |
 | 016 | Medallion as a Dagster software-defined asset graph | Accepted | 2026-05-27 |
+| 017 | Multi-platform repo layout — `core/` + per-platform domains | Accepted | 2026-05-28 |
+| 018 | Monorepo CI/CD — `core/` as a wheel, per-platform deploy workflows | Accepted | 2026-05-28 |

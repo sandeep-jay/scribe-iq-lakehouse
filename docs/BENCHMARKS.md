@@ -103,8 +103,8 @@ Same transforms, three orchestrators (the concrete payoff of ADR-002 / ADR-004):
 
 | Surface | Where | Use it for |
 |---------|-------|-----------|
-| `local.pipeline` CLI | `local/pipeline.py` | Default, dependency-light, CI gate; full-rebuild + per-cohort flags |
-| **Dagster asset graph** | `orchestration/` (ADR-015/016) | Per-cohort backfill via UI, `validate_table` as asset checks (rule-by-rule pass/fail in metadata), sensor on `data/bronze/fhir/`, run history. Each asset's `MaterializeResult` carries schema + sample rows + sample-bundle/SOAP-card markdown so clicking a node shows what materialized |
+| `core.surfaces.cli.pipeline` CLI | `core/surfaces/cli/pipeline.py` | Default, dependency-light, CI gate; full-rebuild + per-cohort flags |
+| **Dagster asset graph** | `core/orchestration/dagster/` (ADR-015/016) | Per-cohort backfill via UI, `validate_table` as asset checks (rule-by-rule pass/fail in metadata), sensor on `data/bronze/fhir/`, run history. Each asset's `MaterializeResult` carries schema + sample rows + sample-bundle/SOAP-card markdown so clicking a node shows what materialized |
 | Fabric notebooks | `fabric/notebooks/` (Session 5) | Same transforms over Spark + OneLake; Auto Loader streaming |
 
 Dagster timings track the CLI numbers above (the work is in the transforms; orchestration
@@ -118,7 +118,7 @@ read-only over the existing Delta tables):
 
 | Tool | Where | Demo use |
 |------|-------|---------|
-| `scripts/demo_walkthrough.py` | rich CLI, one patient end-to-end | Bronze → Parse → Silver → Gold for one anchor patient, with full SOAP note rendered |
+| `core/scripts/demo_walkthrough.py` | rich CLI, one patient end-to-end | Bronze → Parse → Silver → Gold for one anchor patient, with full SOAP note rendered |
 | `docs/demo/notebooks/demo_notebook.sql` | DuckDB UI, 20 SQL cells | Corpus headlines, top conditions, as-of-date condition growth, full SOAP notes, keyword cohort search |
 | `docs/demo/PLAYBOOK.md` | recording guide | 5-beat portfolio video script + take-by-take recording sequence |
 
@@ -129,10 +129,10 @@ and the SQL notebook present the same data shape.
 
 ```bash
 pip install -e ".[local,dev]"                 # or: .venv
-python -m local.ingest.download --bronze-root data/bronze   # FHIR, ~4.6 GiB, network-bound
-python -m local.ingest.download --assets-only --with-dicom --with-csv  # +9.3 GiB DICOM, 466 MB CSV
-python -m local.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m19s) + gold/* (~6.5s)
-python -m local.pipeline --gold-only                        # rebuild Gold from existing Silver
+python -m core.ingest.download --bronze-root data/bronze   # FHIR, ~4.6 GiB, network-bound
+python -m core.ingest.download --assets-only --with-dicom --with-csv  # +9.3 GiB DICOM, 466 MB CSV
+python -m core.surfaces.cli.pipeline --bronze-root data/bronze --with-gold  # → silver/* (~2m19s) + gold/* (~6.5s)
+python -m core.surfaces.cli.pipeline --gold-only                        # rebuild Gold from existing Silver
 ```
 
 > Full re-runs build from a clean slate (delta-rs MERGE is for incremental cohort landing,

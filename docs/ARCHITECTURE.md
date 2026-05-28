@@ -12,7 +12,7 @@ A medallion healthcare lakehouse on Synthea Coherent (synthetic FHIR R4). Engine
 so the same code runs locally (Polars + delta-rs) or on Microsoft Fabric. Today the
 **Bronze → Silver → Gold** path is fully built and runs end-to-end on the full
 1,278-patient dataset locally (143,946 encounter summaries), under either the
-`local.pipeline` CLI or a **Dagster** software-defined asset graph (ADR-015/016);
+`core.surfaces.cli.pipeline` CLI or a **Dagster** software-defined asset graph (ADR-015/016);
 **Fabric execution** is next.
 
 ```mermaid
@@ -42,7 +42,7 @@ flowchart TD
 ```
 
 The same transforms run under **three execution surfaces** (ADR-015/016): the
-dependency-light `local.pipeline` CLI, a **Dagster** asset graph (cohorts =
+dependency-light `core.surfaces.cli.pipeline` CLI, a **Dagster** asset graph (cohorts =
 partitions, `validate_table` = asset checks, sensor watches `data/bronze/fhir/`),
 and the upcoming Fabric notebooks. The orchestration tier imports the pure
 transforms and platform — the lakehouse never imports orchestration.
@@ -50,7 +50,7 @@ transforms and platform — the lakehouse never imports orchestration.
 For **read-only exploration** the same Delta tables are queryable from a
 **DuckDB UI notebook** ([`docs/demo/notebooks/demo_notebook.sql`](demo/notebooks/demo_notebook.sql))
 — 20 cells over Silver/Gold via `delta_scan(...)`, no Spark. The Dagster asset
-metadata and the CLI walkthrough ([`scripts/demo_walkthrough.py`](../scripts/demo_walkthrough.py))
+metadata and the CLI walkthrough ([`core/scripts/demo_walkthrough.py`](../core/scripts/demo_walkthrough.py))
 both render via [`local/preview.py`](../local/preview.py), so the same data
 shape appears in the UI, the terminal, and the SQL notebook — one set of
 renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
@@ -62,7 +62,7 @@ renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAY
 | Bronze | ✅ built (local) | raw JSON, cohort-partitioned | append-only; `_metadata/manifest.json` provenance |
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
 | Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; as-of-date problem list; corpus contract v1.1.0 (ADR-012/014) |
-| Dagster orchestration | ✅ built (local) | `orchestration/` package | medallion as asset graph; cohort partitions; `validate_table` as asset checks (ADR-015/016) |
+| Dagster orchestration | ✅ built (local) | `core/orchestration/dagster/` package | medallion as asset graph; cohort partitions; `validate_table` as asset checks (ADR-015/016) |
 | Fabric execution | 🔜 Session 5 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
 
 ## Module map
@@ -88,7 +88,7 @@ local/
   pipeline.py      Bronze → Silver → Gold orchestration (run_pipeline · build_gold)
   redaction.py     PHI-safe log references (ADR-010)
   preview.py       Markdown renderers for data shape (schema/sample/bundle/encounter card) —
-                   shared by Dagster asset metadata and scripts/demo_walkthrough.py
+                   shared by Dagster asset metadata and core/scripts/demo_walkthrough.py
 orchestration/   Dagster asset graph — third execution surface; imports local/, never reverse (ADR-015/016)
   assets.py        bronze_fhir → silver_tables (@multi_asset, parse-once → 10 nodes) → gold_encounter_summary;
                    each MaterializeResult carries rendered metadata (schema + sample rows + sample bundle / SOAP card)

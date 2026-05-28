@@ -2,7 +2,7 @@
 
 This directory holds DuckDB UI notebooks that query the Silver/Gold Delta tables
 directly — the third "self-serve" surface alongside the
-[`local.pipeline`](../../../local/pipeline.py) CLI and the
+[`core.surfaces.cli.pipeline`](../../../core/surfaces/cli/pipeline.py) CLI and the
 [Dagster asset graph](../../../orchestration/). No Python required; pure SQL.
 
 ## Files
@@ -15,7 +15,7 @@ directly — the third "self-serve" surface alongside the
 ## Prerequisites
 
 - DuckDB **≥ 1.2** (needs the `-ui` flag): `brew install duckdb`
-- Silver + Gold tables built locally — run `python -m local.pipeline --with-gold`
+- Silver + Gold tables built locally — run `python -m core.surfaces.cli.pipeline --with-gold`
   or materialize through Dagster first (see [docs/RUNBOOK.md §6](../../RUNBOOK.md))
 
 ## Quick start
@@ -69,7 +69,7 @@ Full cell-by-cell rationale + the screencast highlight reel are in the sibling
 - **Absolute paths** — DuckDB UI's working directory is `$HOME` by default, so
   every `delta_scan(...)` needs an absolute path. Cell 0 handles this via the
   `repo` variable; edit that one constant if your repo lives elsewhere.
-- **`silver.ingest_log`** is only written by the CLI path (`local.pipeline`),
+- **`silver.ingest_log`** is only written by the CLI path (`core.surfaces.cli.pipeline`),
   not by the Dagster path. If you built Silver via Dagster, the validation log
   lives in the Dagster UI's asset-check panel instead — see
   [ADR-016](../../adr/016-dagster-asset-graph.md).
