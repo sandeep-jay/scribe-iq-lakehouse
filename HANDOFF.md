@@ -31,6 +31,102 @@ in `fabric/notebooks/` importing `from core.transforms…`. Wire `fabric/deploy/
 against the Fabric REST API. Configure workspace Git Integration → `/fabric/notebooks/`.
 Capture screenshots per `fabric/docs/SCREENSHOTS.md` before trial expires (~11 days).
 
+## Working / In progress / Blocked (Session 4.5)
+
+**Working**
+- `core/` package: 122 unit tests green, imports verified end-to-end, wheel builds and installs into a fresh venv.
+- `fabric/` package: stub `FabricPlatform` dispatches through the factory; 4 contract tests verify it implements every abstract method on `LakehousePlatform`.
+- LocalLite execution: CLI (`python -m core.surfaces.cli.pipeline`) and Dagster (`dagster definitions list -m core.orchestration.dagster.definitions`) both load.
+- CI scaffolds: `core-pr-tests.yml`, `core-build.yml`, `fabric-deploy.yml` parse cleanly (skeleton state for fabric-deploy).
+
+**In progress**
+- `FabricPlatform` real implementation — Session 5.
+- Fabric notebooks 00–10 — Session 5 (placeholder dir exists).
+- `fabric/deploy/upload_wheel.py` REST integration — Session 5.
+
+**Blocked**
+- None.
+
+## Test status (Session 4.5)
+- `pytest`: **126 passed in 2.06s** (122 core + 4 fabric contract).
+- `core/scripts/gen_data_dictionary.py --check`: up to date.
+- `core/scripts/gen_corpus_schema.py --check`: up to date.
+- Cross-domain import check (CI gate): clean — `core/` imports nothing from `fabric/`/`databricks/`/`aws/`.
+- Wheel verification: `python -m build --wheel` produces `scribe_iq_lakehouse-0.1.0-py3-none-any.whl`; installs into fresh venv; `from core.platform.factory import get_platform; from core.transforms.registry import SILVER_TABLES` succeeds.
+
+## ADRs written this session
+- **ADR-017** — Multi-platform repo layout — `core/` + per-platform domains.
+- **ADR-018** — Monorepo CI/CD — `core/` as a wheel, per-platform deploy workflows.
+- ADR index in [`docs/adr/README.md`](docs/adr/README.md) updated.
+
+## Open decisions (Session 4.5)
+
+| Decision | Options considered | Recommendation | Status |
+|---|---|---|---|
+| Where LocalLite lives long-term | Inside `core/` (current) vs promoted to a top-level `local/` sibling of `fabric/` for symmetry | Keep in `core/` until Databricks/AWS arrive; promote if asymmetry becomes a problem | OPEN — revisit when adding `databricks/` |
+| Wheel publish destination | GitHub Releases only · GitHub Packages · public PyPI | GitHub Releases + artifacts for now; revisit when a real consumer needs versioned pulls | OPEN — Session 5+ |
+| Fabric notebook smoke test in `fabric-deploy.yml` | Run after every deploy vs gated by label | Run after every deploy (cheap on a healthy Environment, surfaces breakage immediately) | OPEN — implement in Session 5 |
+
+## Key state (Session 4.5)
+```
+LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform, Polars + DuckDB + delta-rs
+Storage root: data/ (gitignored) — Bronze (FHIR/DICOM/CSV) · Silver (10 Delta) · Gold (encounter_summary + manifest)
+Repo layout:    core/  (kernel + LocalLite + Dagster + CLI + tests + scripts + docs)
+                fabric/ (FabricPlatform stub + notebooks/ + environments/ + deploy/ + tests/ + docs/)
+                .github/workflows/ (core-pr-tests, core-build, fabric-deploy; databricks/aws templates disabled)
+Tests:          126 passing (122 core + 4 fabric contract). pyproject testpaths = ["core/tests", "fabric/tests"].
+Wheel:          scribe_iq_lakehouse-0.1.0-py3-none-any.whl builds cleanly; installs in fresh venv; PLATFORMS dispatch verified.
+Factory map:    fabric → fabric.platform.FabricPlatform (stub, NotImplementedError)
+                databricks → databricks.platform.DatabricksPlatform (no module yet — ImportError as expected)
+                aws → aws.platform.AWSPlatform (no module yet — ImportError as expected)
+                gcp → gcp.platform.GCPPlatform (no module yet)
+                local_spark → core.platform.local_spark.LocalSparkPlatform (no module yet)
+                local_lite → core.platform.local_lite.LocalLitePlatform (DEFAULT)
+Generated docs: docs/DATA_DICTIONARY.md and schemas/gold_encounter_summary.json — both up to date (--check passes)
+Fabric Git Integration target (Session 5): /fabric/notebooks/   ← workspace ↔ git folder
+Core wheel delivery (Session 5):           Fabric Environment ← upload_wheel.py via REST + Service Principal
+Commit sequence (this session): 0a1c544 → fe10916 → af8daa6 → 0242cba → f7ca50c (5 commits)
+Fabric workspace: NOT YET CREATED  |  Fabric trial: ~11 days remaining
+```
+
+## Files changed this session (Session 4.5)
+
+**Commit 1 — refactor(repo): rename local/ → core/** (62 files; all `git mv`)
+- `local/` → `core/` (platform/, transforms/, gold/, ingest/, validation/, redaction.py, preview.py)
+- `local/pipeline.py` → `core/surfaces/cli/pipeline.py` (+ new __init__.py for `core/surfaces/`, `core/surfaces/cli/`)
+- `orchestration/` → `core/orchestration/dagster/` (+ new `core/orchestration/__init__.py`)
+- `tests/` → `core/tests/`; `scripts/` → `core/scripts/`
+- `pyproject.toml`: include/testpaths/dagster module_name updated (commit-1 scope, no fabric* yet)
+- `.claude/rules/transforms.md`, `.claude/rules/notebooks.md`: path refs + cross-domain ban
+- `core/scripts/gen_*.py`: `_REPO_ROOT` climbs an extra `.parent`
+- `core/tests/test_platform_factory.py`: unbuilt-platform tests now use `databricks`/`aws`
+
+**Commit 2 — feat(fabric): scaffold fabric/ domain** (11 new files)
+- `fabric/platform.py` (FabricPlatform stub), `fabric/__init__.py`
+- `fabric/notebooks/`, `fabric/environments/lakehouse_env.yml`
+- `fabric/deploy/upload_wheel.py`, `fabric/deploy/fabric_cicd_config.yml`
+- `fabric/tests/__init__.py`, `fabric/tests/test_fabric_platform.py`
+- `fabric/docs/DEPLOYMENT.md`, `fabric/docs/SCREENSHOTS.md`
+- `fabric/scripts/capture_lineage.py`
+- `pyproject.toml`: extend include to `["core*", "fabric*"]`, testpaths add `fabric/tests`, ruff per-file-ignores extended
+
+**Commit 3 — ci: per-platform deploy workflows** (5 new files)
+- `.github/workflows/core-pr-tests.yml`, `core-build.yml`, `fabric-deploy.yml`
+- `.github/workflows/databricks-deploy.yml.disabled`, `aws-deploy.yml.disabled`
+
+**Commit 4 — docs: ADR-017/018, planning doc, two-domain layout** (11 files)
+- `docs/adr/017-multi-platform-repo-layout.md` (new)
+- `docs/adr/018-ci-cd-monorepo.md` (new)
+- `docs/roadmap/multi-platform-reorg.md` (new)
+- `docs/adr/README.md`: index extended
+- `README.md`: Repository layout section rewritten, See also link added
+- `CLAUDE.md`: architecture principles + key files + non-negotiables updated
+- `docs/RUNBOOK.md`, `docs/ARCHITECTURE.md`, `docs/BENCHMARKS.md`, `docs/demo/PLAYBOOK.md`, `docs/demo/notebooks/README.md`: path rewrites
+
+**Commit 5 — docs(session): close out Session 4.5** (2 files)
+- `HANDOFF.md`: Session 4.5 prepended (this section + structured sub-sections), Session 4 preserved below
+- `CHANGELOG.md`: Session 4.5 entry
+
 ---
 
 ## Session 4 summary (prior — preserved below for context)
