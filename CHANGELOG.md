@@ -5,12 +5,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 4.5 — Multi-platform repo reorg (`core/` + `fabric/`)
+#### Added
+- **ADR-017** (multi-platform repo layout) and **ADR-018** (CI/CD monorepo, core as wheel).
+- `docs/roadmap/multi-platform-reorg.md` — full planning doc behind the reorg.
+- Top-level `fabric/` domain: `platform.py` stub, `notebooks/`, `environments/lakehouse_env.yml`,
+  `deploy/{upload_wheel.py,fabric_cicd_config.yml}`, `tests/test_fabric_platform.py`,
+  `docs/{DEPLOYMENT.md,SCREENSHOTS.md}`, `scripts/capture_lineage.py`. The stub raises
+  `NotImplementedError` on every method so accidental Fabric dispatch fails loudly.
+- `.github/workflows/`: `core-pr-tests.yml`, `core-build.yml`, `fabric-deploy.yml` (skeleton);
+  `databricks-deploy.yml.disabled` and `aws-deploy.yml.disabled` as visible templates.
+- One-way dependency rule (`core/` never imports from any platform tier) enforced by CI grep.
+
+#### Changed
+- `local/` → `core/` (via `git mv`, history preserved). `core/` now bundles the
+  platform-agnostic kernel + `core/platform/local_lite.py` (LocalLite impl) +
+  `core/orchestration/dagster/` + `core/surfaces/cli/pipeline.py` + `core/tests/` +
+  `core/scripts/` + `core/docs/`.
+- Imports rewritten: `from local.X` → `from core.X` across all Python, docstrings, and
+  top-level docs. Factory strings for `fabric`/`databricks`/`aws`/`gcp` now point outside
+  `core/` (e.g., `"fabric.platform.FabricPlatform"`).
+- `pyproject.toml`: package discovery `["core*", "fabric*"]`; testpaths
+  `["core/tests", "fabric/tests"]`; `[tool.dagster] module_name = "core.orchestration.dagster.definitions"`.
+- `CLAUDE.md`, `.claude/rules/transforms.md`, `.claude/rules/notebooks.md`: paths and
+  cross-domain-import rule updated.
+- README: new "Repository layout" section with two-domain tree + "See also" link to the
+  separate `fabric-lakehouse-hls-readmission` repo.
+- `core/scripts/gen_*.py`: `_REPO_ROOT` climbs one extra level (`parent.parent.parent`)
+  now that scripts live one directory deeper.
+
+#### Tests
+- 122 core tests still pass; 4 new `fabric/tests/test_fabric_platform.py` contract tests
+  verify FabricPlatform subclasses `LakehousePlatform`, implements every abstract method,
+  and that every method currently raises `NotImplementedError`. Total: 126 passing.
+
 ### Session 4 (cont.) — Demoability polish: data shape visible, not just lineage
 #### Added
 - `local/preview.py` — new shared Markdown renderer module: `schema_md`, `sample_md`,
   `bundle_resource_counts`, `bundle_summary_md`, `gold_encounter_card`. Pure-Python,
   framework-agnostic; used by both the Dagster asset metadata and the CLI walkthrough.
-- `scripts/demo_walkthrough.py` (~280 LOC) — one-patient end-to-end medallion tour using
+- `core/scripts/demo_walkthrough.py` (~280 LOC) — one-patient end-to-end medallion tour using
   the `rich` library. Auto-picks an anchor patient with ≥3 conditions, ≥3 meds, ≥1 SOAP
   note (or `--patient-id <uuid>`), then renders Bronze (FHIR resource counts + sample
   Patient JSON) → Parse (records dict) → Silver (patient row + 3-5 encounters /
@@ -30,28 +64,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   contingencies.
 - `pyproject.toml` `[dev]` extra: added `rich>=13.0` for the walkthrough.
 #### Changed
-- `local/validation/validate.py` — added `@dataclass CheckOutcome(name, passed, detail)`
+- `core/validation/validate.py` — added `@dataclass CheckOutcome(name, passed, detail)`
   and `ValidationResult.checks: list[CheckOutcome]` + an `ok()` method. Every rule now
   records its outcome (passing + failing alike), with the actual numbers in the detail
   string (e.g. `unique:patient_id` → "1,278/1,278 distinct"). `failed_checks` is kept
   unchanged for `silver.ingest_log` and CLI pipeline compatibility.
-- `orchestration/checks.py` — `AssetCheckResult.metadata` now includes `rules_total`,
+- `core/orchestration/dagster/checks.py` — `AssetCheckResult.metadata` now includes `rules_total`,
   `rules_passed`, `rules_failed`, and a `rules` Markdown table (`MetadataValue.md`) so
   clicking a check in the UI shows the full rule-by-rule breakdown, not just a green dot.
-- `orchestration/assets.py` — each `MaterializeResult.metadata` now carries rendered data
+- `core/orchestration/dagster/assets.py` — each `MaterializeResult.metadata` now carries rendered data
   shape via `local.preview`:
   - `bronze_fhir` → first bundle's FHIR resource-type breakdown table
   - 10 Silver outputs → schema table + first-5-row Markdown table per partition
   - `gold_encounter_summary` → full schema + a sample-encounter card with the SOAP note
     rendered as readable text
-- `local/platform/local_lite.py` — `LocalLitePlatform.__init__` now anchors relative
+- `core/platform/local_lite.py` — `LocalLitePlatform.__init__` now anchors relative
   storage roots to the repo (via `Path(__file__).resolve().parents[2]`), not `Path.cwd()`.
   Fixes a bug where Dagster sensor-triggered runs (spawned from the daemon's CWD) could
   not find `data/bronze`. Absolute env-var values pass through unchanged.
-- `orchestration/assets.py` + `orchestration/sensors.py` — both now derive `bronze_root`
+- `core/orchestration/dagster/assets.py` + `core/orchestration/dagster/sensors.py` — both now derive `bronze_root`
   from `platform.create().root` (not the module-level relative `DEFAULT_BRONZE`). Sensor
   now takes the platform resource for consistency.
-- `orchestration/sensors.py` — target widened from `bronze_fhir` only to `bronze_fhir` +
+- `core/orchestration/dagster/sensors.py` — target widened from `bronze_fhir` only to `bronze_fhir` +
   all 10 Silver asset keys, so each cohort drop materializes Bronze and Silver end-to-end
   in one Dagster run. Gold stays manual (unpartitioned aggregate). 6th wiring test in
   `tests/test_dagster_defs.py` pins the selection (`SENSOR_TARGET_KEYS`).
@@ -70,8 +104,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Session 4 — Dagster local orchestration (ADR-015, ADR-016)
 #### Added
-- `orchestration/` — new top-level package modelling the medallion as a software-defined
-  Dagster asset graph. Third execution surface alongside the `local.pipeline` CLI and the
+- `core/orchestration/dagster/` — new top-level package modelling the medallion as a software-defined
+  Dagster asset graph. Third execution surface alongside the `core.surfaces.cli.pipeline` CLI and the
   (upcoming) Fabric notebooks; reuses the pure transforms verbatim — zero duplicate logic.
   - `assets.py`: `bronze_fhir` (cohort-partitioned inventory) → `silver_tables`
     `@multi_asset` (parse-once → 10 distinct Silver asset nodes, MERGE-upsert via
@@ -112,7 +146,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   `dagster-webserver>=1.8,<2.0`); `orchestration*` added to `setuptools.packages.find`.
   Kept out of `[dev]` to keep CI minimal — install with `pip install -e ".[local,dev,orchestration]"`.
 - `.claude/rules/transforms.md`: banned `dagster` / `orchestration` imports from
-  `local/transforms/` (orchestration imports transforms, never the reverse — mirrors the
+  `core/transforms/` (orchestration imports transforms, never the reverse — mirrors the
   Spark/notebook isolation rule).
 - `.gitignore`: `dagster_home/`, `.tmp_dagster_home*/`, `.dagster/` so `dagster dev` local
   state never lands in git.
@@ -146,7 +180,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   authored ≤ date. Same `array[string]` schema, changed semantics → **contract v1.1.0** (MINOR).
 - `silver.condition`: added `abatement_date` (from `Condition.abatementDateTime`) — additive
   column; `fhir_parser.extract_condition` now emits it.
-- `local/gold/encounter_summary.py`: `_conditions`/`_medications` → `_active_conditions`/
+- `core/gold/encounter_summary.py`: `_conditions`/`_medications` → `_active_conditions`/
   `_active_medications` patient-level as-of-date joins (meds pre-aggregated to earliest start).
 - Regenerated `docs/DATA_DICTIONARY.md` (condition column) + `schemas/gold_encounter_summary.json`
   (x-contract-version 1.1.0).
@@ -164,10 +198,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Session 3 — DICOM ingest + imaging header extraction (ADR-013)
 #### Added
-- `local/ingest/dicom_index.py`: `DicomIndex` maps DICOM `StudyInstanceUID` → local `.dcm`
+- `core/ingest/dicom_index.py`: `DicomIndex` maps DICOM `StudyInstanceUID` → local `.dcm`
   path (the FHIR↔DICOM join key) and serves bytes; `study_uid_from_filename()` parses the
   Coherent file-name convention. File names embed patient names → never logged raw (ADR-010).
-- `local/ingest/download.py`: `download_assets()` + CLI `--with-dicom` / `--with-csv` /
+- `core/ingest/download.py`: `download_assets()` + CLI `--with-dicom` / `--with-csv` /
   `--assets-only` sync the DICOM (~9.3 GiB, 298 files) and CSV (~466 MB) prefixes into Bronze,
   writing `_metadata/assets_manifest.json`. CSV is landed for reference; not otherwise processed.
 - `tests/test_dicom_extraction.py`: 11 tests (synthetic in-memory DICOM, no committed binary)
@@ -180,7 +214,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   `_extract_dicom_headers` normalizes Coherent placeholder tokens (`UNKNOWN`…) → null and DICOM
   `DA` dates → ISO; FHIR stays authoritative for `modality`; `dicom_binary_id` = StudyInstanceUID
   (never the patient-named file); a malformed file is caught per-study (`dicom_extracted=False`).
-- `local/pipeline.py`: builds a `DicomIndex` once and threads the resolver through `_parse_cohort`.
+- `core/surfaces/cli/pipeline.py`: builds a `DicomIndex` once and threads the resolver through `_parse_cohort`.
 - `tests/fixtures/sample_bundle.json`: ImagingStudy now carries a real `urn:oid:` identifier.
 #### Full-run result
 - 298 of 3,752 `silver.imaging_study` rows enriched with DICOM `rows`/`columns`/
@@ -194,15 +228,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Session 3 — Gold layer + corpus contract (ADR-012)
 #### Added
-- `local/gold/encounter_summary.py`: pure transform denormalizing all 10 Silver tables →
+- `core/gold/encounter_summary.py`: pure transform denormalizing all 10 Silver tables →
   `gold.encounter_summary` (one row per encounter). Polars join/aggregation engine; output
   assembled against an explicit `GOLD_SCHEMA` (nested struct vitals/imaging/versions + array
   conditions/meds/labs). Deterministic `summary_id` (UUIDv5 of encounter_id); BP parsed from
   Silver `components_json`; anniversary-based age-at-encounter. Defines the corpus contract
   (`CONTRACT_VERSION`, `REQUIRED_FIELDS`, `OPTIONAL_FIELDS`).
-- `local/gold/corpus_manifest.py`: lineage manifest — contract version, per-Silver row
+- `core/gold/corpus_manifest.py`: lineage manifest — contract version, per-Silver row
   counts + Delta versions, platform, and corpus coverage stats.
-- `scripts/gen_corpus_schema.py` + `schemas/gold_encounter_summary.json`: machine-readable
+- `core/scripts/gen_corpus_schema.py` + `schemas/gold_encounter_summary.json`: machine-readable
   JSON Schema (Draft 2020-12) generated from `GOLD_SCHEMA` (`--check` for CI); never hand-edited.
 - `docs/CORPUS_CONTRACT.md`: human contract — required/optional guarantees, real corpus
   coverage, honest limitations (encounter-grain sparsity, ECG=0, synthetic genomics), semver
@@ -213,7 +247,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   published JSON Schema (`jsonschema`). 103 tests total.
 - ADR-012: Gold engine (Polars pure transform), grain, `silver_versions` lineage, contract integrity.
 #### Changed
-- `local/pipeline.py`: added `build_gold()` + CLI flags `--with-gold` / `--gold-only`.
+- `core/surfaces/cli/pipeline.py`: added `build_gold()` + CLI flags `--with-gold` / `--gold-only`.
 - Platform interface: `table_version(layer, table)` (delta-rs `version()` on `local_lite`,
   `None` default on base) and `write_gold_manifest()`; `local_lite` also gained `read_gold()`.
 - `pyproject.toml`: `jsonschema>=4.0` added to `[dev]` for corpus-contract validation.
@@ -226,7 +260,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Documentation — generated-first (ADR-011)
 #### Added
-- `scripts/gen_data_dictionary.py`: renders `docs/DATA_DICTIONARY.md` from the registry
+- `core/scripts/gen_data_dictionary.py`: renders `docs/DATA_DICTIONARY.md` from the registry
   schemas + validation rules (`--check` mode for CI); never hand-edited.
 - `docs/DATA_DICTIONARY.md`: generated — all 10 Silver tables + `ingest_log`.
 - `docs/ARCHITECTURE.md`: as-built view (Mermaid diagram + done-vs-planned status table),
@@ -247,7 +281,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Post-Session-2 hardening
 #### Security
-- `local/redaction.py`: `redact()` → non-reversible `ref:<hash>` for identifier-bearing
+- `core/redaction.py`: `redact()` → non-reversible `ref:<hash>` for identifier-bearing
   values. Applied to "skipping unreadable bundle" warnings in `pipeline.py` and
   `local_lite.py`, which previously logged Synthea filenames embedding patient name + UUID
   (ADR-010). 4 redaction tests added (83 total).
@@ -260,18 +294,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Session 2 — Local Bronze + Silver pipeline (full dataset)
 #### Added
-- `local/ingest/download.py`: parallel `aws s3 sync` (no-sign-request) + round-robin
+- `core/ingest/download.py`: parallel `aws s3 sync` (no-sign-request) + round-robin
   cohort partitioning (A/B/C) + ingest manifest
-- `local/platform/local_lite.py`: `LocalLitePlatform` (Polars + delta-rs) — Delta
+- `core/platform/local_lite.py`: `LocalLitePlatform` (Polars + delta-rs) — Delta
   write/read, CDC enabled on create, MERGE-upsert on primary key
-- `local/transforms/schema_utils.py`: field-type-driven Arrow coercion (UTC timestamps,
+- `core/transforms/schema_utils.py`: field-type-driven Arrow coercion (UTC timestamps,
   date32, string codes) + dedup
-- `local/transforms/silver_{patient,encounter,clinical,soap_notes,ecg,imaging,genomics}.py`
+- `core/transforms/silver_{patient,encounter,clinical,soap_notes,ecg,imaging,genomics}.py`
   and `registry.py` — all 10 Silver tables with explicit Arrow schemas (ADR-004)
-- `local/validation/{schema_registry,validate}.py`: per-table quality checks →
+- `core/validation/{schema_registry,validate}.py`: per-table quality checks →
   `silver.ingest_log`
-- `local/ingest/{bronze_landing,streaming_sim}.py`: cohort inventory + Auto Loader replay sim
-- `local/pipeline.py`: per-cohort micro-batch Bronze→Silver orchestration
+- `core/ingest/{bronze_landing,streaming_sim}.py`: cohort inventory + Auto Loader replay sim
+- `core/surfaces/cli/pipeline.py`: per-cohort micro-batch Bronze→Silver orchestration
 - 36 new tests (schema_utils, silver transforms, local_lite Delta round-trip, validation) —
   79 total, all passing
 - ADR-009: Local Silver materialization (delta-rs, type coercion, component JSON)
@@ -288,9 +322,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 #### Added
 - Repo scaffold per spec §4: `pyproject.toml`, `requirements.txt`, `local/` package
   tree (`platform`, `transforms`, `ingest`, `gold`, `validation`), `tests/`, README stub
-- `local/platform/base.py`: `LakehousePlatform` abstract interface (ADR-002)
-- `local/platform/factory.py`: `LAKEHOUSE_PLATFORM` env-var router (default `local_lite`)
-- `local/transforms/fhir_parser.py`: `FHIRBundleParser` — extract_patient, encounter,
+- `core/platform/base.py`: `LakehousePlatform` abstract interface (ADR-002)
+- `core/platform/factory.py`: `LAKEHOUSE_PLATFORM` env-var router (default `local_lite`)
+- `core/transforms/fhir_parser.py`: `FHIRBundleParser` — extract_patient, encounter,
   condition, observation (scalar + component), medication_request, procedure, soap_note
   (Base64 decode + S/O/A/P section detection), ecg_metadata, imaging_study (FHIR + DICOM
   passes), genomic_report; `strip_reference` handles `urn:uuid:`/`Type/id` forms

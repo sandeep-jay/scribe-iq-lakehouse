@@ -1,15 +1,43 @@
-# HANDOFF — Session 4 (Dagster orchestration · demoability polish)
+# HANDOFF — Session 4.5 (Multi-platform reorg before Fabric)
 **Date:** 2026-05-28
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
 
 ---
 
-## Session summary
+## Session 4.5 summary (this update)
+
+Restructured the repo into two top-level domains before starting Session 5 (Fabric) —
+`core/` (platform-agnostic kernel + LocalLite + Dagster + CLI + tests + scripts) and
+`fabric/` (Fabric platform stub + notebooks placeholder + deploy config + tests + docs).
+`local/` and `orchestration/` and `tests/` and `scripts/` were `git mv`'d into `core/`
+(history preserved); all imports rewritten `from local.X` → `from core.X`; factory
+strings rewritten so `LAKEHOUSE_PLATFORM=fabric` dispatches to `fabric.platform.FabricPlatform`
+(outside `core/`); `pyproject.toml` packages now `["core*", "fabric*"]`; testpaths
+`["core/tests", "fabric/tests"]`. ADR-017 (layout) + ADR-018 (CI/CD monorepo) document
+the decisions; `core/` will be built as a versioned wheel and consumed by each platform
+tier via its native install mechanism (Fabric Environment, Databricks Asset Bundle, AWS
+Lambda layer). GitHub workflows scaffolded: `core-pr-tests.yml`, `core-build.yml`,
+`fabric-deploy.yml` (skeleton — completed in Session 5); `databricks-deploy.yml.disabled`
+and `aws-deploy.yml.disabled` as visible templates. Fabric Git Integration will target
+`/fabric/notebooks/` (subfolder), `core` arrives as a wheel uploaded to a Fabric Environment.
+The companion repo `fabric-lakehouse-hls-readmission` stays separate (different narrative,
+CSV-first); cross-linked from README "See also". 126 tests passing (122 core + 4 fabric
+contract). Planning doc: [docs/roadmap/multi-platform-reorg.md](docs/roadmap/multi-platform-reorg.md).
+
+**Next session (Session 5 — Fabric)**: Implement `fabric/platform.py` against the
+`LakehousePlatform` interface (OneLake Delta + Fabric Spark). Build notebooks 00–10
+in `fabric/notebooks/` importing `from core.transforms…`. Wire `fabric/deploy/upload_wheel.py`
+against the Fabric REST API. Configure workspace Git Integration → `/fabric/notebooks/`.
+Capture screenshots per `fabric/docs/SCREENSHOTS.md` before trial expires (~11 days).
+
+---
+
+## Session 4 summary (prior — preserved below for context)
 Inserted a local **Dagster** orchestration tier between Session 3's Gold corpus and the
 upcoming Fabric work — a permanent portfolio artifact independent of the expiring Fabric
 trial — then layered demoability work on top so the asset graph isn't just lineage but
-**shows what flowed**. New top-level `orchestration/` package models the medallion as a
+**shows what flowed**. New top-level `core/orchestration/dagster/` package models the medallion as a
 software-defined asset graph: `bronze_fhir` (per-cohort inventory) → `silver_tables`
 `@multi_asset` (parse-once → 10 distinct Silver asset nodes, MERGE-upserted) →
 `gold_encounter_summary` (unpartitioned aggregate that also co-writes the corpus manifest).
@@ -28,7 +56,7 @@ breakdowns, an encounter-card with the SOAP note rendered) that the Dagster
 produced. `validate_table` was refactored to record every rule's outcome (not just
 failures) as `CheckOutcome(name, passed, detail)`, so the `@asset_check` UI shows a
 rule-by-rule pass/fail table with the actual numbers ("unique:encounter_id → 143,946/143,946
-distinct"), not just a green dot. New [`scripts/demo_walkthrough.py`](scripts/demo_walkthrough.py)
+distinct"), not just a green dot. New [`core/scripts/demo_walkthrough.py`](core/scripts/demo_walkthrough.py)
 follows one anchor patient Bronze → Parse → Silver → Gold in a rich-formatted CLI;
 new [`docs/demo/notebooks/demo_notebook.sql`](docs/demo/notebooks/demo_notebook.sql) is a
 20-cell DuckDB UI source (`duckdb -ui`) over the same Delta tables for a SQL audience.
@@ -47,26 +75,26 @@ Session 6=CI/docs.
 ## Current state
 
 **Working (new this session):**
-- `orchestration/partitions.py` — `cohort_partitions` (`DynamicPartitionsDefinition`),
+- `core/orchestration/dagster/partitions.py` — `cohort_partitions` (`DynamicPartitionsDefinition`),
   `COHORT_PARTITIONS_NAME = "cohort"`. Sensor mutates the set; assets read it.
-- `orchestration/resources.py` — `PlatformResource(ConfigurableResource)` with
+- `core/orchestration/dagster/resources.py` — `PlatformResource(ConfigurableResource)` with
   `platform_name: str | None`; `create()` returns a fresh `LakehousePlatform` via the
   factory. Honours `LAKEHOUSE_PLATFORM` (ADR-002).
-- `orchestration/assets.py` — `bronze_fhir` (cohort-partitioned inventory asset),
+- `core/orchestration/dagster/assets.py` — `bronze_fhir` (cohort-partitioned inventory asset),
   `silver_tables` `@multi_asset` (10 `AssetSpec`s, all deps=`bronze_fhir`,
   partitions=cohort; calls `_parse_cohort` + `SILVER_TABLES[*].build` +
   `platform.write_silver(mode="merge")`), `gold_encounter_summary` (deps on the 10
   Silver assets; reuses `build_encounter_summary` + `build_corpus_manifest`,
   `p.write_gold` + `p.write_gold_manifest`, `MetadataValue.json(corpus_stats)`).
-- `orchestration/checks.py` — `_make_check(table_name)` factory builds one
+- `core/orchestration/dagster/checks.py` — `_make_check(table_name)` factory builds one
   `@asset_check` per Silver table, all wrapping `validate_table()`; surfaces in UI.
-- `orchestration/sensors.py` — `bronze_cohort_sensor`, default STOPPED, 30 s interval.
+- `core/orchestration/dagster/sensors.py` — `bronze_cohort_sensor`, default STOPPED, 30 s interval.
   **Target = `bronze_fhir` + 10 Silver asset keys** (sourced from `SILVER_TABLES` via
   `SENSOR_TARGET_KEYS`) so each new cohort fires one Dagster run that materializes
   Bronze + Silver in a single step. Gold stays manual (unpartitioned). Diffs
   `cohort_labels(DEFAULT_BRONZE)` against `get_dynamic_partitions(...)` and emits
   `RunRequest`s + a single `build_add_request` in one `SensorResult`.
-- `orchestration/definitions.py` — thin `Definitions(assets, asset_checks, sensors,
+- `core/orchestration/dagster/definitions.py` — thin `Definitions(assets, asset_checks, sensors,
   resources={"platform": PlatformResource()})`.
 - `tests/test_dagster_defs.py` (6 tests) — Definitions load + all asset keys present +
   10 checks wired; Silver assets declare `bronze_fhir` lineage edge; **sensor target
@@ -79,7 +107,7 @@ Session 6=CI/docs.
   `dagster-webserver>=1.8,<2.0`); `[tool.dagster] module_name=orchestration.definitions`;
   `orchestration*` added to setuptools packages.
 - `.claude/rules/transforms.md` — banned `dagster` / `orchestration` imports from
-  `local/transforms/` (orchestration imports transforms, never the reverse).
+  `core/transforms/` (orchestration imports transforms, never the reverse).
 - `.gitignore` — `dagster_home/`, `.tmp_dagster_home*/`, `.dagster/`, `*.duckdb` family.
 - ADR-015 (adopt Dagster, sequence Dagster → Fabric) + ADR-016 (assets +
   platform-persisted; multi_asset for parse-once; cohort partitions). `docs/adr/README.md`
@@ -87,26 +115,26 @@ Session 6=CI/docs.
   `docs/roadmap/MASTER_PLAN.md` post-weekend update note.
 
 **Demoability polish (new this session, on top of the orchestration tier):**
-- `local/validation/validate.py` — added `CheckOutcome(name, passed, detail)` + `ok()` method
+- `core/validation/validate.py` — added `CheckOutcome(name, passed, detail)` + `ok()` method
   on `ValidationResult`; every rule now records its outcome (pass + fail), not just failures.
   `failed_checks` kept for CLI/`ingest_log` compatibility.
-- `orchestration/checks.py` — `AssetCheckResult.metadata` now includes a Markdown table of
+- `core/orchestration/dagster/checks.py` — `AssetCheckResult.metadata` now includes a Markdown table of
   every rule's pass/fail + numbers (`rules_total`, `rules_passed`, `rules_failed`, `rules`).
-- `orchestration/assets.py` — each `MaterializeResult.metadata` carries:
+- `core/orchestration/dagster/assets.py` — each `MaterializeResult.metadata` carries:
   - `bronze_fhir` → first bundle's FHIR resource-type breakdown (`MetadataValue.md`)
   - 10 Silver outputs → schema table + first-5-row table per partition
   - `gold_encounter_summary` → full schema + sample-encounter card with SOAP note rendered
 - `local/preview.py` — new shared module: `schema_md`, `sample_md`, `bundle_resource_counts`,
   `bundle_summary_md`, `gold_encounter_card`. Pure-Python, framework-agnostic; same
   renderings power the Dagster UI metadata AND the CLI walkthrough.
-- `local/platform/local_lite.py` — `LocalLitePlatform.__init__` now anchors relative
+- `core/platform/local_lite.py` — `LocalLitePlatform.__init__` now anchors relative
   storage roots to the repo (via `Path(__file__).resolve().parents[2]`), not `Path.cwd()`,
   so Dagster sensor-triggered runs (which spawn from the daemon's CWD) find `data/bronze`.
   Absolute env-var values pass through unchanged.
-- `orchestration/assets.py` + `orchestration/sensors.py` — both derive `bronze_root` from
+- `core/orchestration/dagster/assets.py` + `core/orchestration/dagster/sensors.py` — both derive `bronze_root` from
   `platform.create().root` (not the module-level relative `DEFAULT_BRONZE`). Sensor now
   takes the platform resource for consistency.
-- `scripts/demo_walkthrough.py` — new (~280 LOC) — one-patient Bronze → Parse → Silver → Gold
+- `core/scripts/demo_walkthrough.py` — new (~280 LOC) — one-patient Bronze → Parse → Silver → Gold
   tour using the `rich` library. Auto-picks an anchor patient (≥3 conditions, ≥3 meds, ≥1
   SOAP note) or accepts `--patient-id`; `--pause N` for screencast pacing. Reuses
   `local/preview.py` so it shows the same data shape as the Dagster UI.
@@ -120,7 +148,7 @@ Session 6=CI/docs.
 - `docs/demo/PLAYBOOK.md` — full portfolio-video recording playbook: 5-beat structure,
   preflight checklist, window setup, take-by-take sequence (with optional sensor demo
   contingency), editing notes, publishing checklist.
-- `pyproject.toml` — `rich>=13.0` added to `[dev]` (used by `scripts/demo_walkthrough.py`).
+- `pyproject.toml` — `rich>=13.0` added to `[dev]` (used by `core/scripts/demo_walkthrough.py`).
 - `tests/test_dagster_defs.py` — 6th test (`test_sensor_targets_bronze_and_silver_not_gold`)
   pins the sensor selection.
 
@@ -217,7 +245,7 @@ To run each surface locally:
 pip install -e ".[local,dev,orchestration]"
 
 # A. CLI (default, dependency-light)
-python -m local.pipeline --with-gold
+python -m core.surfaces.cli.pipeline --with-gold
 
 # B. Dagster (asset graph + sensor + checks; install needs DAGSTER_HOME)
 export DAGSTER_HOME="$PWD/dagster_home"; mkdir -p "$DAGSTER_HOME"
@@ -240,7 +268,7 @@ lakehouse and the S3 shortcut to `s3://synthea-open-data/coherent/`, then build 
 notebook sequence following the 8-cell template (`.claude/rules/notebooks.md`):
 `00_setup`, `01_bronze_ingest`, `05_silver_soap_notes` (demo centerpiece — MUST display
 a decoded SOAP note), `09_gold_encounter_summary`. Notebooks import the **same** pure
-transforms from `local/transforms/` and `local/gold/` — zero duplicate logic — now
+transforms from `core/transforms/` and `core/gold/` — zero duplicate logic — now
 demonstrably the **third** execution surface (after the CLI and Dagster). **Capture
 screenshots as you go** (trial ~11 days; spec §15.2). **Read first:** spec §6 (notebook
 sequence), `.claude/rules/notebooks.md`, ADR-001 (Fabric-first).
@@ -290,12 +318,12 @@ Bronze: 1,280 FHIR bundles (4.6 GB) + 298 DICOM (.dcm, 9.3 GB) + 16 CSV (466 MB)
 Silver: 10 Delta tables (CDC, validation passing via @asset_check); ingest_log only on CLI builds
 Gold: encounter_summary (143,946 rows, as-of-date problem list) + corpus_manifest.json
 Orchestration: orchestration/ — `dagster dev` (asset graph) ✓ live in this session, sensor proven
-Demo: scripts/demo_walkthrough.py (rich CLI) + docs/demo/notebooks/demo_notebook.sql (DuckDB)
+Demo: core/scripts/demo_walkthrough.py (rich CLI) + docs/demo/notebooks/demo_notebook.sql (DuckDB)
       + docs/demo/PLAYBOOK.md (recording guide). Shared renderers via local/preview.py.
 Docs: README, RUNBOOK, ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT (v1.1.0)
 Contract: v1.1.0 — unchanged this session (ADR-015/016 "Contract impact: none")
 Tests: 122 passing (+6 Dagster wiring, importorskip-guarded so [dev]-only installs stay clean)
-Full re-run (CLI path): rm -rf data/silver data/gold; python -m local.pipeline --with-gold
+Full re-run (CLI path): rm -rf data/silver data/gold; python -m core.surfaces.cli.pipeline --with-gold
 Full re-run (Dagster path): wipe data/silver+gold first, then backfill every cohort partition
                             of bronze_fhir + silver_tables, then materialize gold_encounter_summary
 Session 4 commit: 8abdde2 — feat(orchestration): Dagster medallion asset graph + demo surfaces
@@ -309,21 +337,21 @@ M5 Max: arriving ~June 2, 2026
 
 **Orchestration tier (initial Dagster work):**
 - `orchestration/__init__.py` — new (re-exports `defs`)
-- `orchestration/partitions.py` — new (`cohort_partitions`, `COHORT_PARTITIONS_NAME`)
-- `orchestration/resources.py` — new (`PlatformResource`)
-- `orchestration/assets.py` — new; later enriched with `MetadataValue.md` schema/sample/card
-- `orchestration/checks.py` — new (10 `@asset_check`s via factory); later enriched with
+- `core/orchestration/dagster/partitions.py` — new (`cohort_partitions`, `COHORT_PARTITIONS_NAME`)
+- `core/orchestration/dagster/resources.py` — new (`PlatformResource`)
+- `core/orchestration/dagster/assets.py` — new; later enriched with `MetadataValue.md` schema/sample/card
+- `core/orchestration/dagster/checks.py` — new (10 `@asset_check`s via factory); later enriched with
   rule-by-rule pass/fail Markdown table in metadata
-- `orchestration/sensors.py` — new (`bronze_cohort_sensor`); target widened to
+- `core/orchestration/dagster/sensors.py` — new (`bronze_cohort_sensor`); target widened to
   `bronze_fhir` + 10 Silver asset keys; platform resource injected
-- `orchestration/definitions.py` — new (`defs`)
+- `core/orchestration/dagster/definitions.py` — new (`defs`)
 - `tests/test_dagster_defs.py` — new (6 wiring tests, `importorskip` guarded)
 
 **Demoability polish (this session, on top of orchestration tier):**
 - `local/preview.py` — new shared Markdown renderer module
-- `local/validation/validate.py` — `CheckOutcome` + `ValidationResult.checks` + `ok()`
-- `local/platform/local_lite.py` — repo-anchored root (CWD-independent for Dagster daemon)
-- `scripts/demo_walkthrough.py` — new (~280 LOC, `rich` CLI walkthrough)
+- `core/validation/validate.py` — `CheckOutcome` + `ValidationResult.checks` + `ok()`
+- `core/platform/local_lite.py` — repo-anchored root (CWD-independent for Dagster daemon)
+- `core/scripts/demo_walkthrough.py` — new (~280 LOC, `rich` CLI walkthrough)
 - `docs/demo/PLAYBOOK.md` — new (recording playbook)
 - `docs/demo/notebooks/demo_notebook.sql` — new (20-cell DuckDB UI source)
 - `docs/demo/notebooks/README.md` — new (notebook usage / regeneration)
