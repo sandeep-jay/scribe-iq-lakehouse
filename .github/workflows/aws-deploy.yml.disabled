@@ -1,0 +1,34 @@
+# Template — disabled until aws/ exists. Rename to `.yml` and uncomment.
+#
+# name: aws deploy
+#
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - "core/**"
+#       - "aws/**"
+#       - ".github/workflows/aws-deploy.yml"
+#
+# permissions:
+#   id-token: write   # OIDC role assumption — no long-lived secrets
+#   contents: read
+#
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     environment: aws-prod
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with: { python-version: "3.11" }
+#       - uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+#           aws-region: us-east-1
+#       - run: pip install -e ".[local,dev]" build aws-cdk-lib constructs
+#       - run: python -m build --wheel --outdir dist/
+#       - working-directory: aws/cdk
+#         run: |
+#           npx cdk synth
+#           npx cdk deploy --require-approval never

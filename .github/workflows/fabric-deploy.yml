@@ -1,0 +1,59 @@
+name: fabric deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "fabric/**"
+      - ".github/workflows/fabric-deploy.yml"
+  workflow_dispatch:
+
+# Each deploy targets a single environment with its own secrets — see
+# docs/adr/018-ci-cd-monorepo.md. Cross-platform secret leakage is prevented
+# by GitHub Environment scoping.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: fabric-prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[local,dev,orchestration]"
+          pip install build
+
+      - name: Run fabric contract tests
+        run: pytest fabric/tests/ -v
+
+      - name: Build core wheel
+        run: python -m build --wheel --outdir dist/
+
+      - name: Upload wheel to Fabric Environment
+        # Implemented in Session 5 — fabric/deploy/upload_wheel.py is a stub today.
+        # Uses Service Principal credentials from the fabric-prod environment.
+        env:
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
+          FABRIC_ENVIRONMENT_ID: ${{ secrets.FABRIC_ENVIRONMENT_ID }}
+        run: |
+          python fabric/deploy/upload_wheel.py \
+            --wheel "$(ls dist/scribe_iq_lakehouse*.whl | head -1)" \
+            --environment-id "$FABRIC_ENVIRONMENT_ID"
+
+      # Notebook sync is handled by Fabric Git Integration (workspace-side),
+      # not by this workflow. See fabric/docs/DEPLOYMENT.md.
+
+      - name: Smoke run (Session 5)
+        run: echo "Trigger Fabric pipeline smoke run — implemented in Session 5."

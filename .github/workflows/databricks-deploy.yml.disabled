@@ -1,0 +1,29 @@
+# Template — disabled until databricks/ exists. Rename to `.yml` and uncomment.
+#
+# name: databricks deploy
+#
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - "core/**"
+#       - "databricks/**"
+#       - ".github/workflows/databricks-deploy.yml"
+#
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     environment: databricks-prod
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with: { python-version: "3.11" }
+#       - run: pip install -e ".[local,dev]" build
+#       - run: python -m build --wheel --outdir dist/
+#       - name: Deploy bundle
+#         env:
+#           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+#           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+#         run: |
+#           databricks bundle validate --target prod
+#           databricks bundle deploy --target prod
