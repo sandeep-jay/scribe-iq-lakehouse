@@ -1,0 +1,25 @@
+# fabric-cicd configuration — pushes notebooks under `fabric/notebooks/` into
+# the target Fabric workspace on every successful core+fabric CI run.
+#
+# Stub. Filled in alongside the workflow in Session 5.
+
+workspace:
+  id: "${FABRIC_WORKSPACE_ID}"    # set in fabric-prod GitHub Environment
+  tenant_id: "${FABRIC_TENANT_ID}"
+
+auth:
+  type: service_principal
+  client_id: "${FABRIC_CLIENT_ID}"
+  client_secret: "${FABRIC_CLIENT_SECRET}"
+
+items:
+  # Only notebooks live in source control today. As Data Factory pipelines and
+  # Lakehouse schemas are added, list them here.
+  - type: Notebook
+    path: ../notebooks
+    # All .ipynb files under fabric/notebooks/ are picked up.
+
+deployment:
+  # Smoke run after deploy — fails the CI build if the demo notebook errors.
+  smoke_notebook: 05_silver_soap_notes
+  smoke_timeout_seconds: 600

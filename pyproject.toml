@@ -40,18 +40,22 @@ orchestration = [
 ]
 
 [tool.setuptools.packages.find]
-# `core/` is the platform-agnostic kernel; per-platform domains land as sibling
-# packages in a follow-up commit. See ADR-002 for the abstraction model.
-include = ["core*"]
+# `core/` is the platform-agnostic kernel (shared by every platform tier).
+# Each platform directory (`fabric/`, future `databricks/`, `aws/`) is a sibling
+# package that depends on `core` one-way — `core` never imports from them.
+# See docs/adr/017-multi-platform-repo-layout.md.
+include = ["core*", "fabric*"]
 
 [tool.dagster]
 # `dagster dev` loads the medallion asset graph from this module (ADR-015/016).
 module_name = "core.orchestration.dagster.definitions"
 
 [tool.pytest.ini_options]
-# Make `core` importable without an editable install.
+# Make `core` and `fabric` importable without an editable install. Tests live
+# inside each domain so reorganising or removing a platform doesn't leave
+# orphaned tests at the repo root.
 pythonpath = ["."]
-testpaths = ["core/tests"]
+testpaths = ["core/tests", "fabric/tests"]
 addopts = "-ra -q"
 
 [tool.ruff]
@@ -69,6 +73,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 # Tests don't need module/function docstrings.
 "core/tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+"fabric/tests/*" = ["D100", "D101", "D102", "D103", "D104"]
 
 [tool.black]
 line-length = 100
