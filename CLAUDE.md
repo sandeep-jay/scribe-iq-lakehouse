@@ -58,6 +58,7 @@ END:   HANDOFF.md → CHANGELOG.md → sync docs (regen DATA_DICTIONARY; update
   docs/roadmap/scribe-iq-lakehouse-spec.md   Full implementation spec
   docs/roadmap/MASTER_PLAN.md                Cross-repo weekend execution plan
   docs/roadmap/multi-platform-reorg.md       Repo layout + CI/CD model (ADR-017/018)
+  docs/roadmap/fabric-execution-plan.md      Session 5 plan — Fabric end-to-end + dedup fix + Power BI
   docs/adr/                                  ADRs — read before touching architecture
   HANDOFF.md                                 Current session state (updated every session)
   CHANGELOG.md                               All meaningful changes

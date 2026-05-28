@@ -119,6 +119,13 @@ Why Dagster before Fabric: it's a permanent portfolio artifact independent of th
 expiring Fabric trial, and the asset graph documents the DAG the Fabric notebooks mirror.
 Kept tight (~1–2 sessions) so the trial (~12 days) retains runway. See spec §9.
 
+### Session 5 plan (Fabric end-to-end + dedup fix + Power BI)
+
+Full execution plan: [fabric-execution-plan.md](fabric-execution-plan.md).
+Seven phases (dedup fix → FabricPlatform impl → workspace setup → notebooks →
+Data Pipeline → exploratory analysis → Power BI), each committable on its own.
+Phases 1–2 don't need the Fabric trial; Phases 3–7 do (~11 days remaining).
+
 ---
 
 ## Weekend Schedule — Locked
