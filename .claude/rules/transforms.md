@@ -2,8 +2,10 @@
 
 These rules apply when editing any file in local/transforms/.
 
-## Platform isolation (ADR-002)
+## Platform isolation (ADR-002, ADR-015)
 - NO imports from local.platform, pyspark, notebookutils, mssparkutils, or delta
+- NO imports from dagster or orchestration — the orchestration tier imports
+  transforms, never the reverse (same rule as Spark/notebooks)
 - NO file paths — all paths come from the platform parameter
 - NO spark.read or spark.write — transforms receive data, they don't fetch it
 

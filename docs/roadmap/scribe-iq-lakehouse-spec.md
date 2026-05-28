@@ -1144,7 +1144,24 @@ Goal: full pipeline runs locally on 5-patient fixture, all Silver tables written
 Goal: Gold encounter_summary populated, corpus contract documented
 ```
 
-### Session 4 — Fabric notebooks
+### Session 4 — Dagster local orchestration (ADR-015, ADR-016)
+
+```
+1. orchestration/partitions.py — cohort partitions (from cohort_labels)
+2. orchestration/resources.py  — LakehousePlatform as a Dagster resource (LAKEHOUSE_PLATFORM)
+3. orchestration/assets.py     — Silver multi_asset (parse-once → 10 tables),
+                                 gold_encounter_summary + corpus_manifest assets
+4. orchestration/checks.py     — @asset_check per Silver table wrapping validate_table()
+5. orchestration/sensors.py    — Bronze cohort sensor (Auto Loader analogue, §5.2)
+6. orchestration/definitions.py — Definitions(assets, asset_checks, resources, sensors)
+7. tests/test_dagster_defs.py  — materialize on fixture; checks pass; Definitions loads
+8. dagster + dagster-webserver in pyproject [dev]; ADR-015/016 written
+Goal: `dagster dev` shows the medallion asset graph; per-cohort backfill works;
+      assets reuse the pure transforms — zero duplicate logic (third execution surface
+      alongside the CLI and the Fabric notebooks). local/pipeline.py CLI kept for CI.
+```
+
+### Session 5 — Fabric notebooks
 
 ```
 1. fabric/notebooks/00_setup.ipynb
@@ -1163,7 +1180,7 @@ Goal: Gold encounter_summary populated, corpus contract documented
 Goal: Full pipeline running in Fabric, all tables populated, CDC enabled
 ```
 
-### Session 5 — CI, docs, screenshots, README
+### Session 6 — CI, docs, screenshots, README
 
 ```
 1. .github/workflows/ci.yml

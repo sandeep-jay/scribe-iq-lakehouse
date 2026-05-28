@@ -11,7 +11,9 @@ A medallion healthcare lakehouse on Synthea Coherent (synthetic FHIR R4). Engine
 **pure transforms** return Apache Arrow tables; a **platform abstraction** handles all I/O
 so the same code runs locally (Polars + delta-rs) or on Microsoft Fabric. Today the
 **Bronze → Silver → Gold** path is fully built and runs end-to-end on the full
-1,278-patient dataset locally (143,946 encounter summaries); **Fabric execution** is next.
+1,278-patient dataset locally (143,946 encounter summaries), under either the
+`local.pipeline` CLI or a **Dagster** software-defined asset graph (ADR-015/016);
+**Fabric execution** is next.
 
 ```mermaid
 flowchart TD
@@ -39,6 +41,20 @@ flowchart TD
     class B,ST,G done;
 ```
 
+The same transforms run under **three execution surfaces** (ADR-015/016): the
+dependency-light `local.pipeline` CLI, a **Dagster** asset graph (cohorts =
+partitions, `validate_table` = asset checks, sensor watches `data/bronze/fhir/`),
+and the upcoming Fabric notebooks. The orchestration tier imports the pure
+transforms and platform — the lakehouse never imports orchestration.
+
+For **read-only exploration** the same Delta tables are queryable from a
+**DuckDB UI notebook** ([`docs/demo/notebooks/demo_notebook.sql`](demo/notebooks/demo_notebook.sql))
+— 20 cells over Silver/Gold via `delta_scan(...)`, no Spark. The Dagster asset
+metadata and the CLI walkthrough ([`scripts/demo_walkthrough.py`](../scripts/demo_walkthrough.py))
+both render via [`local/preview.py`](../local/preview.py), so the same data
+shape appears in the UI, the terminal, and the SQL notebook — one set of
+renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
+
 ## Layers (as-built)
 
 | Layer | State | Storage | Notes |
@@ -46,7 +62,8 @@ flowchart TD
 | Bronze | ✅ built (local) | raw JSON, cohort-partitioned | append-only; `_metadata/manifest.json` provenance |
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
 | Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; as-of-date problem list; corpus contract v1.1.0 (ADR-012/014) |
-| Fabric execution | 🔜 Session 4 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
+| Dagster orchestration | ✅ built (local) | `orchestration/` package | medallion as asset graph; cohort partitions; `validate_table` as asset checks (ADR-015/016) |
+| Fabric execution | 🔜 Session 5 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
 
 ## Module map
 
@@ -70,15 +87,32 @@ local/
     streaming_sim.py cohort replay + watchdog (Auto Loader analogue)
   pipeline.py      Bronze → Silver → Gold orchestration (run_pipeline · build_gold)
   redaction.py     PHI-safe log references (ADR-010)
+  preview.py       Markdown renderers for data shape (schema/sample/bundle/encounter card) —
+                   shared by Dagster asset metadata and scripts/demo_walkthrough.py
+orchestration/   Dagster asset graph — third execution surface; imports local/, never reverse (ADR-015/016)
+  assets.py        bronze_fhir → silver_tables (@multi_asset, parse-once → 10 nodes) → gold_encounter_summary;
+                   each MaterializeResult carries rendered metadata (schema + sample rows + sample bundle / SOAP card)
+  checks.py        @asset_check per Silver table wrapping validate_table() — UI shows rule-by-rule pass/fail table
+  partitions.py    DynamicPartitionsDefinition — cohorts = partitions (per-cohort backfill)
+  resources.py     PlatformResource → get_platform(LAKEHOUSE_PLATFORM); platform persists, not IOManager
+  sensors.py       bronze_cohort_sensor — watches data/bronze/fhir/cohort=* (Auto Loader analogue);
+                   target = bronze_fhir + 10 Silver assets (full chain per cohort, Gold stays manual)
+  definitions.py   Definitions(assets, asset_checks, sensors, resources)
 scripts/
   gen_data_dictionary.py   Generates docs/DATA_DICTIONARY.md from the registry (ADR-011)
   gen_corpus_schema.py     Generates schemas/gold_encounter_summary.json from GOLD_SCHEMA (ADR-012)
+  demo_walkthrough.py      One-patient Bronze → Parse → Silver → Gold tour (rich CLI; same renderers as Dagster UI)
+docs/demo/
+  PLAYBOOK.md               Portfolio video recording guide (5-beat structure, takes, edit, publish)
+  notebooks/
+    demo_notebook.sql       20-cell DuckDB UI source — corpus headlines, top conditions, SOAP notes, lineage
+    README.md               How to open / regenerate the .duckdb (gitignored)
 ```
 
 ## Key properties (and where enforced)
 
-- **Platform portability** — transforms never import platform/Spark/Delta; one env var
-  switches engines. Enforced by `.claude/rules/transforms.md` + tests (ADR-002).
+- **Platform portability** — transforms never import platform/Spark/Delta/`dagster`; one env
+  var switches engines. Enforced by `.claude/rules/transforms.md` + tests (ADR-002, ADR-015).
 - **Arrow interchange** — every transform returns an explicitly-typed `pa.Table` (ADR-004).
 - **CDC everywhere** — `delta.enableChangeDataFeed=true` on table creation (ADR-009).
 - **Honest data modeling** — genomic `data_limitation` is a first-class column (ADR-007);

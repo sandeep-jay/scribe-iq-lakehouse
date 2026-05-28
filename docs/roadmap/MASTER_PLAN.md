@@ -101,6 +101,26 @@ Silver SOAP notes are the upgrade — not a blocker.
 
 ---
 
+## Post-Weekend Update — Local Orchestration (Dagster)
+
+Sessions 1–3 shipped (local Bronze→Silver→Gold, DICOM, as-of-date corpus, docs).
+A local orchestration layer was inserted **before** the Fabric work:
+
+```
+Session 4 (NEW)  Dagster — medallion as a software-defined asset graph
+                 cohorts = partitions · validate_table = asset checks
+                 reuses the pure transforms (third execution surface)
+                 ADR-015 (adopt Dagster) · ADR-016 (asset-graph model)
+Session 5        Fabric notebooks (was Session 4)
+Session 6        CI, docs, screenshots, README (was Session 5)
+```
+
+Why Dagster before Fabric: it's a permanent portfolio artifact independent of the
+expiring Fabric trial, and the asset graph documents the DAG the Fabric notebooks mirror.
+Kept tight (~1–2 sessions) so the trial (~12 days) retains runway. See spec §9.
+
+---
+
 ## Weekend Schedule — Locked
 
 ```

@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 # Table property that turns on CDC for downstream change-feed consumers.
 _CDC_CONFIG = {"delta.enableChangeDataFeed": "true"}
 
+# Repo root (the directory containing ``local/``, ``data/``, ``orchestration/``)
+# — used to anchor relative storage roots so the platform is CWD-independent.
+# Dagster sensor-triggered runs spawn from the daemon's working directory, which
+# is not necessarily the repo root; without this anchor, ``Path("data")`` would
+# resolve to a non-existent path inside that CWD.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class LocalLitePlatform(LakehousePlatform):
     """Filesystem + delta-rs lakehouse for local development and CI."""
@@ -35,8 +42,15 @@ class LocalLitePlatform(LakehousePlatform):
     name = "local_lite"
 
     def __init__(self, root: str | os.PathLike[str] | None = None) -> None:
-        """Initialize with a storage root (env ``LAKEHOUSE_LOCAL_ROOT`` or ``data``)."""
-        self.root = Path(root or os.getenv("LAKEHOUSE_LOCAL_ROOT", "data"))
+        """Initialize with a storage root (env ``LAKEHOUSE_LOCAL_ROOT`` or ``data``).
+
+        Relative paths are anchored to the repo root (the directory containing
+        this package) — never to ``Path.cwd()`` — so the platform behaves
+        identically under the CLI (run from repo root) and under Dagster
+        sensor-triggered runs (spawned from the daemon's CWD).
+        """
+        raw = Path(root or os.getenv("LAKEHOUSE_LOCAL_ROOT", "data"))
+        self.root = raw if raw.is_absolute() else (_REPO_ROOT / raw).resolve()
 
     # ----------------------------------------------------------------- paths
 

@@ -35,6 +35,18 @@ data/
 _delta_log/
 _checkpoints/
 
+# Dagster — local instance state (history/, schedules/, storage/, logs/)
+# `dagster dev` creates ./.tmp_dagster_home_*/ when DAGSTER_HOME is unset.
+dagster_home/
+.tmp_dagster_home*/
+.dagster/
+
+# DuckDB UI notebooks — binary, machine-specific (absolute paths baked in).
+# The canonical source for the notebook cells is notebooks/*.sql (tracked).
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+
 # MLflow
 mlruns/
 mlartifacts/

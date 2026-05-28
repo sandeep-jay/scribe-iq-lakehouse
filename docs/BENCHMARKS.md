@@ -91,11 +91,39 @@ Same transforms, different platforms (one env var). Only `local_lite` is measure
 
 | Capability | local_lite | local_spark | Fabric | Databricks | AWS | GCP |
 |------------|-----------|-------------|--------|------------|-----|-----|
-| Bronze→Silver (full) | ✅ 2m30s | — | 🔜 S4 | roadmap | roadmap | roadmap |
-| Silver→Gold (full) | ✅ ~6.5s | — | 🔜 S4 | roadmap | roadmap | roadmap |
+| Bronze→Silver (full) | ✅ 2m30s | — | 🔜 S5 | roadmap | roadmap | roadmap |
+| Silver→Gold (full) | ✅ ~6.5s | — | 🔜 S5 | roadmap | roadmap | roadmap |
 | CDC | ✅ | — | 🔜 | roadmap | roadmap | roadmap |
 | Streaming | sim only | — | 🔜 Auto Loader | roadmap | roadmap | roadmap |
 | Cost (1.3k pts) | $0 | $0 | trial | — | — | — |
+
+## Execution surfaces
+
+Same transforms, three orchestrators (the concrete payoff of ADR-002 / ADR-004):
+
+| Surface | Where | Use it for |
+|---------|-------|-----------|
+| `local.pipeline` CLI | `local/pipeline.py` | Default, dependency-light, CI gate; full-rebuild + per-cohort flags |
+| **Dagster asset graph** | `orchestration/` (ADR-015/016) | Per-cohort backfill via UI, `validate_table` as asset checks (rule-by-rule pass/fail in metadata), sensor on `data/bronze/fhir/`, run history. Each asset's `MaterializeResult` carries schema + sample rows + sample-bundle/SOAP-card markdown so clicking a node shows what materialized |
+| Fabric notebooks | `fabric/notebooks/` (Session 5) | Same transforms over Spark + OneLake; Auto Loader streaming |
+
+Dagster timings track the CLI numbers above (the work is in the transforms; orchestration
+overhead is ~ms per asset on the fixture). No standalone benchmark — the value is the
+graph, the checks, and partition-level backfill, not throughput.
+
+### Demo / read-only query surface
+
+For exploration alongside the three execution surfaces (not a fourth tier — purely
+read-only over the existing Delta tables):
+
+| Tool | Where | Demo use |
+|------|-------|---------|
+| `scripts/demo_walkthrough.py` | rich CLI, one patient end-to-end | Bronze → Parse → Silver → Gold for one anchor patient, with full SOAP note rendered |
+| `docs/demo/notebooks/demo_notebook.sql` | DuckDB UI, 20 SQL cells | Corpus headlines, top conditions, as-of-date condition growth, full SOAP notes, keyword cohort search |
+| `docs/demo/PLAYBOOK.md` | recording guide | 5-beat portfolio video script + take-by-take recording sequence |
+
+All three render via `local/preview.py`, so the Dagster asset metadata, the CLI walkthrough,
+and the SQL notebook present the same data shape.
 
 ## Reproduce
 
@@ -117,4 +145,4 @@ python -m local.pipeline --gold-only                        # rebuild Gold from 
 - Ingest time is network-bound and will vary; the pipeline time is the stable figure.
 - `local_lite` holds one cohort's records in memory at a time (~1/3 of the data); peak
   RSS was comfortable on 32 GB. Full-dataset-in-memory was deliberately avoided.
-- Fabric/Spark figures will be filled in when those platforms are implemented (Session 4).
+- Fabric/Spark figures will be filled in when those platforms are implemented (Session 5).

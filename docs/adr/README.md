@@ -16,3 +16,5 @@
 | 012 | Gold encounter_summary — engine, grain, lineage | Accepted | 2026-05-27 |
 | 013 | DICOM ingest, FHIR↔DICOM linkage, header extraction | Accepted | 2026-05-27 |
 | 014 | Problem-list-as-of-date for active_conditions/medications | Accepted | 2026-05-27 |
+| 015 | Dagster for local pipeline orchestration | Accepted | 2026-05-27 |
+| 016 | Medallion as a Dagster software-defined asset graph | Accepted | 2026-05-27 |

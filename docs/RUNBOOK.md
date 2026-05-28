@@ -1,10 +1,12 @@
 # Runbook — scribe-iq-lakehouse (local tier)
 
 Operational procedures for ingesting, building, verifying, and troubleshooting the lakehouse
-on the `local_lite` platform (Polars + delta-rs, zero cloud). Fabric procedures land with the
-notebooks in Session 4. For *why* the system is shaped this way, see
-[ARCHITECTURE.md](ARCHITECTURE.md) and the [ADRs](adr/README.md); for reference numbers, see
-[BENCHMARKS.md](BENCHMARKS.md).
+on the `local_lite` platform (Polars + delta-rs, zero cloud). The local stack ships with two
+execution surfaces — the `local.pipeline` CLI (default, dependency-light, the CI path) and
+a **Dagster** asset graph (`orchestration/`, ADR-015/016, optional `[orchestration]` extra);
+both reuse the same pure transforms. Fabric procedures land with the notebooks in Session 5.
+For *why* the system is shaped this way, see [ARCHITECTURE.md](ARCHITECTURE.md) and the
+[ADRs](adr/README.md); for reference numbers, see [BENCHMARKS.md](BENCHMARKS.md).
 
 > All commands assume the repo root and an activated venv (`source .venv/bin/activate`). If you
 > haven't activated it, prefix with `.venv/bin/` (e.g. `.venv/bin/python -m local.pipeline`).
@@ -17,6 +19,7 @@ notebooks in Session 4. For *why* the system is shaped this way, see
 |------|-----|-------|
 | Python 3.11+ | runtime | `python --version` |
 | venv with `[local,dev]` extras | polars, delta-rs, duckdb, pytest, jsonschema | `pip install -e ".[local,dev]"` |
+| Optional `[orchestration]` extra | Dagster + dagster-webserver (for §6) | `pip install -e ".[local,dev,orchestration]"` |
 | AWS CLI | S3 ingest only (not needed to run tests or rebuild from existing Bronze) | `aws --version` |
 | Disk | FHIR 4.6 GB; +9.3 GB if pulling DICOM; Silver/Gold a few hundred MB | `df -h .` |
 
@@ -29,6 +32,7 @@ The S3 source is **AWS Open Data — no credentials required**
 |----------|---------|---------|
 | `LAKEHOUSE_PLATFORM` | `local_lite` | Selects the platform implementation (factory). |
 | `LAKEHOUSE_LOCAL_ROOT` | `data` | Local storage root for bronze/silver/gold. |
+| `DAGSTER_HOME` | (unset) | Where `dagster dev` keeps run history / schedules / storage. Set to `$PWD/dagster_home` so it lives next to the repo and is gitignored. |
 
 Storage layout (all gitignored under `data/`):
 
@@ -189,9 +193,134 @@ duckdb.sql("SELECT soap_note_text FROM delta_scan('data/gold/encounter_summary')
            "WHERE soap_note_text IS NOT NULL LIMIT 1").show(max_width=120)
 ```
 
+Or run the full one-patient walkthrough for a rendered Bronze → Silver → Gold demo
+(also what's reused by the Dagster asset metadata, see §6):
+
+```bash
+python -m scripts.demo_walkthrough              # auto-picks a "good demo" patient
+python -m scripts.demo_walkthrough --pause 1.5  # 1.5s between sections (screencast pacing)
+python -m scripts.demo_walkthrough --patient-id <uuid>   # reproducible
+```
+
+For **interactive SQL exploration** — corpus headlines, top conditions, full SOAP notes,
+keyword search, as-of-date condition evolution — open the DuckDB UI notebook:
+
+```bash
+brew install duckdb                                  # needs DuckDB ≥1.2 (-ui flag)
+duckdb docs/demo/notebooks/demo.duckdb -ui           # opens http://localhost:4213
+```
+
+20 SQL cells over the Delta tables; see [`docs/demo/notebooks/README.md`](demo/notebooks/README.md)
+for the per-cell guide and how to regenerate the `.duckdb` (gitignored) if missing.
+For recording a portfolio demo video around it, see [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
+
 ---
 
-## 6. Regenerate generated docs
+## 6. Run via Dagster (optional)
+
+The medallion is also exposed as a Dagster software-defined asset graph in `orchestration/`
+([ADR-015](adr/015-dagster-local-orchestration.md), [ADR-016](adr/016-dagster-asset-graph.md))
+— a richer, observable execution surface alongside the CLI. The same pure transforms run
+under both; only the orchestration layer differs.
+
+### Install + launch the UI
+
+```bash
+pip install -e ".[local,dev,orchestration]"
+export DAGSTER_HOME="$PWD/dagster_home" && mkdir -p "$DAGSTER_HOME"
+dagster dev                    # opens http://localhost:3000 (asset graph)
+```
+
+`dagster dev` reads `[tool.dagster] module_name = "orchestration.definitions"` from
+`pyproject.toml`. The asset graph nodes are:
+
+```
+bronze_fhir [cohort-partitioned]
+  └─→ silver_tables (multi_asset, cohort-partitioned, 10 outputs)
+       ├─→ patient · encounter · observation · condition · procedure
+       ├─→ medication_request · soap_note · imaging_study · genomic_report · ecg_metadata
+       │     (each with a @asset_check wrapping validate_table)
+       └─→ gold_encounter_summary [unpartitioned aggregate]
+             (also writes gold/_metadata/corpus_manifest.json)
+```
+
+### Per-cohort materialization & backfill
+
+Each cohort under `data/bronze/fhir/cohort=*/` is a Dagster partition that flows through
+**both** `bronze_fhir` and the `silver_tables` multi-asset (Gold is unpartitioned). From
+the UI:
+
+1. **Assets → bronze_fhir → Materialize → pick a partition (e.g. `A`)** — runs Bronze and
+   all 10 Silver tables for cohort `A` in one Dagster run (MERGE-upsert); row counts
+   surface as asset metadata.
+2. **Backfill** the missing partitions (`B`, `C`, …) from the same page — or right-click
+   `silver_tables` → Materialize all to fan out across every registered partition.
+3. After all cohorts are present, materialize **`gold_encounter_summary`** (unpartitioned)
+   to rebuild the corpus and the manifest.
+
+This is the **incremental path that actually works** — full-table whole rebuilds still need
+the CLI clean-slate dance (see Troubleshooting), because delta-rs MERGE is incremental by
+design.
+
+### What clicking an asset shows
+
+Each asset surfaces inline metadata so the graph isn't just lineage — it's the actual data:
+
+- **`bronze_fhir[<cohort>]`** — file count + total bytes + a Markdown breakdown of the
+  first bundle (FHIR resource-type counts: Patient, Encounter, Observation, ...).
+- **Silver outputs (per partition)** — row count, primary key, the full Arrow schema as a
+  table, and a sample of the first 5 rows. Click any one of the 10 Silver assets to see
+  what that table actually looks like for that cohort.
+- **`gold_encounter_summary`** — corpus stats JSON + Silver source versions + the **full
+  schema** + one sample encounter rendered as a Markdown card (patient/date/age + SOAP
+  note text + active conditions / medications / vitals / imaging).
+
+The same renderings are reused by `python -m scripts.demo_walkthrough` for a CLI audience
+and by the DuckDB UI notebook for an SQL audience (see §5 above and
+[`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md) for the portfolio-video recording guide).
+
+### Asset checks — rule-by-rule detail
+
+Every Silver table carries an `@asset_check` that re-reads via the platform and runs the
+same `validate_table()` the CLI logs to `silver.ingest_log`. Click the check in the UI to
+see a Markdown table of **every rule** that ran — name, pass/fail, and the actual numbers
+(e.g. `non_null:patient_id` → "0 nulls / 1,278 rows", `unique:encounter_id` → "143,946/143,946
+distinct"). Failures surface as red badges; pre-fix this was the imperative pipeline's only
+visibility into validation.
+
+### Bronze cohort sensor (the demo)
+
+`bronze_cohort_sensor` is the Dagster analogue of the Auto Loader streaming-sim
+([spec §5.2](roadmap/scribe-iq-lakehouse-spec.md#52-streaming-simulation)). Every tick it
+diffs cohort directories under `data/bronze/fhir/` against the registered dynamic
+partitions and, for each **new** cohort, fires a single `RunRequest` that materializes
+`bronze_fhir` **and all 10 Silver tables** for that partition — Bronze → Silver in one
+run. Gold is intentionally **not** in the sensor target (unpartitioned aggregate; rebuild
+manually once the cohorts of interest are present).
+
+- **Default status: STOPPED.** Otherwise it would replay every existing cohort on
+  `dagster dev` startup. Start it from **Overview → Sensors → bronze_cohort_sensor**.
+- **Polling interval: 30 s.**
+- **Drop a new cohort to demo it:** create `data/bronze/fhir/cohort=D/` with one or more
+  FHIR bundles and wait up to 30 s — the run appears in **Runs** and Bronze + Silver
+  partitions for `D` fill in. (To re-demo across A/B/C, you can clear the dynamic partition
+  set first: `dagster asset wipe --partitions A B C` or, simpler for a fresh repo, just
+  point at a fresh `LAKEHOUSE_LOCAL_ROOT` so the sensor sees A/B/C as new.)
+- The sensor adds new partition keys in the same evaluation as it issues runs
+  (`dynamic_partitions_requests` + `run_requests` in one `SensorResult`) so the partitions
+  exist before the runs start.
+
+### Persistence model (ADR-016)
+
+Assets return `MaterializeResult` (metadata only) — **the `LakehousePlatform` writes the
+Delta bytes**, not a Dagster IOManager. Single persistence authority; Dagster owns the DAG
+and observability. The `[orchestration]` extra is *optional* by design — CI and the CLI
+path don't need it; `tests/test_dagster_defs.py` uses `pytest.importorskip` so the suite
+collects cleanly without it.
+
+---
+
+## 7. Regenerate generated docs
 
 The data dictionary and corpus JSON Schema are **generated from code** and guarded by tests +
 pre-commit ([ADR-011](adr/011-generated-first-docs.md)). Regenerate after changing a Silver
@@ -221,6 +350,10 @@ Never hand-edit those two files; durable per-column prose goes in the generator'
 | `DATA_DICTIONARY.md is out of date` (test/commit fails) | Silver schema/rule changed without regen | `python scripts/gen_data_dictionary.py` (and `gen_corpus_schema.py`) |
 | Out of disk during DICOM pull | 9.3 GB of `.dcm` | DICOM is optional and re-pullable from S3; safe to delete `data/bronze/dicom` |
 | `.claude/settings.json` keeps showing modified | Harness appends auto-approved permissions to the tracked file | Move them to gitignored `.claude/settings.local.json`, `git restore` the tracked file |
+| `ModuleNotFoundError: No module named 'dagster'` when running `dagster dev` or `tests/test_dagster_defs.py` | `[orchestration]` extra not installed (deliberately optional) | `pip install -e ".[local,dev,orchestration]"`; the test file uses `importorskip` so the rest of the suite still runs |
+| `dagster dev` creates a stray `.tmp_dagster_home_*/` next to the repo | `DAGSTER_HOME` is unset | `export DAGSTER_HOME="$PWD/dagster_home"` before `dagster dev` (gitignored) |
+| Dagster `bronze_cohort_sensor` not firing | Sensor is **default-STOPPED** (avoids replaying existing cohorts on startup) | Overview → Sensors → toggle on |
+| Dagster Silver materialize errors with `MERGE matched a target row with multiple source rows` | Re-materializing an already-landed cohort against a stale full-table state (same root cause as the CLI gotcha) | Materialize per-partition (cohorts are the working incremental unit); for a full reset, use the CLI clean-slate path |
 
 ### Logging & PHI safety
 

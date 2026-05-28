@@ -30,10 +30,21 @@ dev = [
     "ruff>=0.5",
     "black>=24.0",
     "jsonschema>=4.0",  # validates Gold corpus rows against the published contract
+    "rich>=13.0",       # terminal rendering for scripts/demo_walkthrough.py
+]
+# Dagster orchestration tier (ADR-015/016) — third execution surface alongside the
+# CLI and Fabric notebooks; imports the pure transforms, never imported by them.
+orchestration = [
+    "dagster>=1.8,<2.0",
+    "dagster-webserver>=1.8,<2.0",
 ]
 
 [tool.setuptools.packages.find]
-include = ["local*"]
+include = ["local*", "orchestration*"]
+
+[tool.dagster]
+# `dagster dev` loads the medallion asset graph from this module.
+module_name = "orchestration.definitions"
 
 [tool.pytest.ini_options]
 # Make `local` importable without an editable install, and keep tests fast/quiet.
