@@ -1,14 +1,13 @@
 We are ending this session. Before stopping, complete all of the following in order:
 
-1. **Update HANDOFF.md** with:
-   - Session summary (3-5 sentences: what was accomplished, current state)
-   - Working / In progress / Blocked sections
-   - Test status (run pytest tests/ and report results)
-   - Next session first task (specific and actionable)
-   - Open decisions table
-   - Key state (env vars, table counts, what's running)
-   - Files changed this session
-   - ADRs written this session
+1. **Update HANDOFF.md** — state only, ~150 line ceiling. Exactly these 5 sections, nothing else:
+   - **Current state** — 3 sentences. What's running, the headline number, the one open thread.
+   - **Next task** — one explicit task with file paths or exact commands. Not a list.
+   - **Open decisions** — table (Decision · Options · Owner · Due). Only OPEN rows; remove DONE rows on commit.
+   - **Blockers / waiting-on** — external dependency / person-action / system state. "None." if none.
+   - **First task for next session** — one sentence, specific and actionable.
+
+   **Rule:** *If you're writing narrative in HANDOFF, it belongs in CHANGELOG.* HANDOFF is state-only; never re-narrate what happened this session, never copy Files-changed lists, never keep "Session N summary" sub-sections. Use the active plan doc for planning detail. The HANDOFF/CHANGELOG content boundary is mandatory — drift back to a fat HANDOFF is a regression.
 
 2. **Update CHANGELOG.md** — add entries for everything meaningful that changed
 
