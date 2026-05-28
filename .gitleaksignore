@@ -1,0 +1,8 @@
+# gitleaks suppressions — known false positives.
+# Format: <commit>:<file>:<rule>:<line>
+# Add new entries with a comment explaining WHY it's a false positive.
+
+# False positive: generic-api-key regex matched `tokenizer, max_length=512`
+# in a documentation block explaining ClinicalBERT tokenizer config.
+# Not a credential; not an API key; not sensitive in any form.
+73c255bee647dcbd102b919999b2be97466051c0:docs/roadmap/clinical-bert-pipeline-spec.md:generic-api-key:241
