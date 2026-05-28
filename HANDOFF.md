@@ -13,10 +13,14 @@ row per encounter) via a pure Polars join engine against an explicit `GOLD_SCHEM
 298 files) + `csv/` (466 MB) prefixes into Bronze and wired pydicom header extraction
 (ADR-013): FHIR↔DICOM linkage by StudyInstanceUID via a pure-parser resolver callback, so 298
 imaging studies now carry real `study_date`/dimensions/slice-thickness (descriptive tags are
-Coherent `UNKNOWN` placeholders → null). Full clean rebuild: **143,946 encounter summaries
-from 1,278 patients** (Silver 2m19s + Gold ~5s), nested Delta types + CDC verified. Corpus
-contract shipped three ways (generated JSON Schema + human doc + conformance test). 114 tests
-passing; ruff/black clean. Fabric notebooks (Session 4) are next.
+Coherent `UNKNOWN` placeholders → null). Then enriched the corpus with a **problem-list-as-
+of-date** join (ADR-014, contract **v1.1.0**): `active_conditions`/`active_medications` now
+reflect the patient's state as of each encounter date (conditions gated by onset+abatement;
+meds by status=active + authored date), lifting **avg conditions/encounter 0.08→9.57 and
+meds 0.05→1.66**. Full clean rebuild: **143,946 encounter summaries from 1,278 patients**
+(Silver ~2m30s + Gold ~6.5s), nested Delta types + CDC verified. Corpus contract shipped three
+ways (generated JSON Schema + human doc + conformance test). 116 tests passing; ruff/black
+clean. Fabric notebooks (Session 4) are next.
 
 ---
 
@@ -45,13 +49,14 @@ passing; ruff/black clean. Fabric notebooks (Session 4) are next.
 - `.venv` `[local,dev]` (now + `jsonschema`); LocalLitePlatform; 7 Silver transforms +
   registry + validation; Bronze→Silver pipeline; ADR-008..011; PHI-safe redaction.
 
-**Gold corpus coverage (full run):**
+**Gold corpus coverage (full run, contract v1.1.0):**
 ```
 encounters         143,946     with_soap_note   143,946 (100%)
 distinct_patients    1,278     with_labs         26,059
-with_vitals         19,830     with_imaging       3,752
+with_vitals         19,830     with_imaging       3,752 (298 DICOM)
 with_genomics          419     with_ecg               0
-avg conditions/enc    0.08     avg meds/enc        0.05
+avg conditions/enc    9.57     avg meds/enc        1.66   (as-of-date, ADR-014)
+empty problem list     0.9%
 ```
 
 **In progress:**
@@ -61,12 +66,14 @@ avg conditions/enc    0.08     avg meds/enc        0.05
 - Fabric workspace + S3 shortcut (manual; needed for Session 4, ~13 days of trial left).
 
 **Discoveries / caveats (carry forward):**
-- **Encounter-grain conditions/meds are sparse** (avg 0.08 / 0.05): Synthea records a
-  condition/med once, joined to that encounter only — not a running problem list. Documented
-  as a v1.0 limitation (ADR-012 / CORPUS_CONTRACT). SOAP note (100% coverage) is the primary
-  generation anchor. Production path: problem-list-as-of-date join (a MINOR contract bump).
+- **Problem-list-as-of-date (ADR-014, done):** conditions/meds now carry forward (avg 9.57 /
+  1.66). Conditions are temporally precise (onset + abatement). **Meds are a forward
+  `status=active` approximation** — FHIR has no med stop date, so a med stopped after a past
+  encounter won't appear on it. A precise med timeline needs the CSV `STOP` (out of scope, ADR-013).
+- Many Synthea "conditions" are SDOH/social factors (e.g. employment, stress) as non-abating
+  `Condition` resources → inflates avg conditions/encounter; faithful to source.
 - `has_ecg` always false (no ECG DiagnosticReports in Coherent FHIR); fields kept for fwd-compat.
-- Nested types (struct/list) round-trip through delta-rs cleanly; full Gold build ~5s.
+- Nested types (struct/list) round-trip through delta-rs cleanly; full Gold build ~6.5s.
 - `recent_vitals` / `imaging` are ALWAYS-present structs (members null when absent) so
   consumers don't null-guard the struct itself — check `imaging.has_imaging` / vital members.
 - **Coherent DICOM descriptive tags are synthetic placeholders** (`StudyDescription=UNKNOWN`,
@@ -82,13 +89,13 @@ avg conditions/enc    0.08     avg meds/enc        0.05
 
 ## Test status
 ```
-114 passed (venv: .venv/bin/python -m pytest)
-  + test_gold_encounter_summary (17): schema/grain, age, vitals(BP from components),
-    labs, null-safe sparse encounter, idempotent summary_id, manifest stats,
-    contract field-list coverage, JSON Schema currency, per-row JSON Schema validation
+116 passed (venv: .venv/bin/python -m pytest)
+  + test_gold_encounter_summary (19): schema/grain, age, vitals(BP from components), labs,
+    as-of-date carry-forward + onset/abatement/med-start gates, idempotent summary_id,
+    manifest stats, contract field-list coverage, JSON Schema currency, per-row validation
   + test_dicom_extraction (11): UID linkage, placeholder→null, DA-date, FHIR modality,
     DicomIndex, parse_bundle resolver path, bad-bytes resilience
-ruff: All checks passed   |   black: 45 files unchanged
+ruff: All checks passed   |   black: clean
 doc-sync --check: DATA_DICTIONARY + gold_encounter_summary.json both up to date
 ```
 
@@ -129,12 +136,13 @@ since Gold exists.
 LAKEHOUSE_PLATFORM=local_lite (default) — LocalLitePlatform implemented
 Storage root: data/ (gitignored) — bronze/{fhir,dicom,csv} + silver/<10>+ingest_log + gold/{encounter_summary,_metadata}
 Bronze: 1,280 FHIR bundles (4.6 GB) + 298 DICOM (.dcm, 9.3 GB) + 16 CSV (466 MB)
-Silver: 10 Delta tables + ingest_log, CDC, all validations passed; imaging 298/3,752 DICOM-enriched
-Gold: encounter_summary (143,946 rows, CDC) + corpus_manifest.json
+Silver: 10 Delta tables + ingest_log, CDC, all validations passed; condition has abatement_date;
+        imaging 298/3,752 DICOM-enriched
+Gold: encounter_summary (143,946 rows, CDC, as-of-date problem list) + corpus_manifest.json
 Docs: ARCHITECTURE, DATA_DICTIONARY(gen), BENCHMARKS, CORPUS_CONTRACT live;
       schemas/gold_encounter_summary.json (gen)
-Contract: v1.0.0 — scribe-iq + clinical-bert-pipeline pin against this
-Tests: 114 passing
+Contract: v1.1.0 — scribe-iq + clinical-bert-pipeline pin against this
+Tests: 116 passing
 Full re-run: rm -rf data/silver data/gold; python -m local.pipeline --with-gold
 Fabric workspace: NOT YET CREATED  |  Fabric trial: ~13 days remaining
 M5 Max: arriving ~June 2, 2026
@@ -143,26 +151,30 @@ M5 Max: arriving ~June 2, 2026
 ---
 
 ## Files changed this session
-- local/gold/{encounter_summary,corpus_manifest}.py — created
+- local/gold/encounter_summary.py — created; then as-of-date _active_conditions/_active_medications
+  + CONTRACT_VERSION 1.1.0 (ADR-014). local/gold/corpus_manifest.py — created
+- local/transforms/silver_clinical.py — condition gains abatement_date column
 - local/ingest/dicom_index.py — created; local/ingest/download.py — download_assets() + flags
-- local/transforms/fhir_parser.py — dicom_resolver, imaging_study_uid(), placeholder/DA-date norm
+- local/transforms/fhir_parser.py — dicom_resolver, imaging_study_uid(), placeholder/DA-date norm,
+  extract_condition emits abatement_date
 - local/pipeline.py — build_gold() + CLI flags + DicomIndex wiring
 - local/platform/base.py — table_version() + write_gold_manifest()
 - local/platform/local_lite.py — read_gold(), table_version(), write_gold_manifest()
 - scripts/gen_corpus_schema.py — created; schemas/gold_encounter_summary.json — generated
-- docs/CORPUS_CONTRACT.md — created; docs/adr/{012-gold-encounter-summary,013-dicom-ingest-and-linkage}.md — created
-- docs/adr/README.md, docs/ARCHITECTURE.md, docs/BENCHMARKS.md — updated
-- tests/test_gold_encounter_summary.py (17) + tests/test_dicom_extraction.py (11) — created
+- docs/CORPUS_CONTRACT.md — created (now v1.1.0); docs/adr/{012,013,014}-*.md — created
+- docs/adr/README.md, docs/ARCHITECTURE.md, docs/BENCHMARKS.md, docs/DATA_DICTIONARY.md(gen) — updated
+- tests/test_gold_encounter_summary.py (19) + tests/test_dicom_extraction.py (11) — created
 - tests/fixtures/sample_bundle.json — ImagingStudy gains urn:oid identifier
 - pyproject.toml — jsonschema dev dep
 - .pre-commit-config.yaml — corpus-schema-current hook
 - .claude/commands/session-end.md — corpus schema in doc-sync step
-- CHANGELOG.md — Session 3 sections (Gold + DICOM)
+- CHANGELOG.md — Session 3 sections (Gold + DICOM + as-of-date)
 
 ## ADRs (running list)
 - ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
   ADR-011 generated-first docs · ADR-012 Gold encounter_summary (engine/grain/lineage) ·
-  ADR-013 DICOM ingest + FHIR↔DICOM linkage + header extraction
+  ADR-013 DICOM ingest + FHIR↔DICOM linkage + header extraction ·
+  ADR-014 problem-list-as-of-date (conditions/meds; contract v1.1.0)
 
 ## Note on settings.json churn
 The harness may append auto-approved Bash permissions to the **tracked**

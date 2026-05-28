@@ -1,6 +1,6 @@
 # Corpus Contract — `gold.encounter_summary`
 
-**Contract version:** `1.0.0` &nbsp;·&nbsp; **Status:** Active &nbsp;·&nbsp; **Spec:** §5.4 / §5.7
+**Contract version:** `1.1.0` &nbsp;·&nbsp; **Status:** Active &nbsp;·&nbsp; **Spec:** §5.4 / §5.7
 
 This is the handoff interface between the lakehouse and its downstream AI consumers:
 
@@ -30,8 +30,8 @@ companion; on any disagreement, the generated JSON Schema and the code win.
 | `patient_gender` | string | |
 | `encounter_type` | string | `silver.encounter.type_display` (may be empty string) |
 | `encounter_date` | date | Encounter start date (may be null if the source timestamp is absent) |
-| `active_conditions` | array[string] | Distinct active condition display names recorded at this encounter — **may be empty** |
-| `active_medications` | array[string] | Distinct active medication display names at this encounter — **may be empty** |
+| `active_conditions` | array[string] | Patient problem list **active as of the encounter date** — onset ≤ date and not yet abated (ADR-014). Distinct display names; may be empty |
+| `active_medications` | array[string] | Active medications **as of the encounter date** — `status=active`, authored ≤ date (ADR-014). Distinct display names; may be empty |
 
 "Present" means the key always exists. List fields are never null — they are `[]` when
 empty. `patient_age` / `encounter_date` are present but may be null when the underlying
@@ -79,19 +79,19 @@ Built from the entire Synthea Coherent dataset (1,278 patients). See
 | With imaging | 3,752 (298 with DICOM headers) |
 | With genomics | 419 |
 | With ECG | 0 |
-| Avg conditions / encounter | 0.08 |
-| Avg medications / encounter | 0.05 |
+| Avg conditions / encounter | 9.57 (as-of-date problem list, ADR-014) |
+| Avg medications / encounter | 1.66 (as-of-date, ADR-014) |
+| Encounters with empty problem list | 0.9% |
 
 ### Known limitations (honest, not hidden)
 
-1. **Encounter-grain conditions/medications are sparse.** `active_conditions` and
-   `active_medications` are joined at the encounter where the resource was *recorded*
-   (per spec §5.4), not propagated as a running problem/medication list. Synthea records a
-   condition once, so most follow-up encounters show empty structured lists even for
-   patients with chronic disease. **Mitigation:** every encounter has a `soap_note_text`,
-   which carries the clinical narrative and is the primary generation anchor. A
-   problem-list-as-of-date enrichment is a documented future enhancement (see PRODUCTION
-   path in ADR-012), not a v1.0 guarantee.
+1. **Medications are a forward `status=active` approximation, not a point-in-time timeline.**
+   As of v1.1.0 (ADR-014) `active_medications` carries forward any `status=active` med from
+   its authoring date — good for chronic/ongoing meds. But FHIR has no medication *stop* date,
+   so a med that was active at a *past* encounter and later stopped cannot be reconstructed:
+   it won't appear on those past encounters. Conditions, by contrast, are temporally precise
+   (onset + abatement gated). A precise med timeline would require the CSV `STOP` column,
+   deliberately out of scope (ADR-013).
 2. **`has_ecg` is always false.** Coherent has no ECG `DiagnosticReport`s in the FHIR
    bundles (ECG is Binary waveform data, roadmap Phase 3). The fields exist for forward
    compatibility.

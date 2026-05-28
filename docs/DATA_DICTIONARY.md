@@ -54,7 +54,7 @@ pipeline-added provenance columns present on every table.
 
 ## silver.condition
 
-**Primary key:** `condition_id` · **Columns:** 10
+**Primary key:** `condition_id` · **Columns:** 11
 
 **Validation:** min rows 50; unique `condition_id`
 
@@ -67,6 +67,7 @@ pipeline-added provenance columns present on every table.
 | `display` | string |  |  |
 | `clinical_status` | string |  |  |
 | `onset_date` | timestamp[us, UTC] |  |  |
+| `abatement_date` | timestamp[us, UTC] |  |  |
 | `recorded_date` | timestamp[us, UTC] |  |  |
 | `source_file` | string |  | Pipeline provenance — Bronze bundle the row came from |
 | `ingest_timestamp` | timestamp[us, UTC] |  | Pipeline provenance — UTC run timestamp |

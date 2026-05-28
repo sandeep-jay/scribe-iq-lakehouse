@@ -117,15 +117,21 @@ def test_silver_versions_struct_fields(gold):
     assert set(versions) == set(SILVER_SOURCES)
 
 
-# --------------------------------------------------------------- empty/optional
+# ----------------------------------------------- as-of-date problem list (ADR-014)
 
 
-def test_sparse_context_encounter_is_null_safe(gold):
-    # encounter-002 has a SOAP note but no structured context — the contract's
-    # "SOAP-anchored, structured fields empty" case (§5.7).
+def test_problem_list_carries_forward(gold):
+    # Hypertension (onset 2019, no abatement) was recorded at encounter-001 but is active
+    # as of encounter-002 too — so it carries forward (ADR-014), unlike the old
+    # encounter-only join which left encounter-002 empty.
     row = _row(gold, "encounter-002")
-    assert row["active_conditions"] == []
-    assert row["active_medications"] == []
+    assert row["active_conditions"] == ["Essential hypertension (disorder)"]
+    assert row["active_medications"] == ["Aspirin 81 MG Oral Tablet"]
+
+
+def test_sparse_optional_context_still_null_safe(gold):
+    # encounter-002 carries the problem list but has no labs/procedures/ecg/imaging/genomics.
+    row = _row(gold, "encounter-002")
     assert row["recent_labs"] == []
     assert row["procedures"] == []
     assert row["soap_note_id"] == "docref-002"
@@ -134,6 +140,73 @@ def test_sparse_context_encounter_is_null_safe(gold):
     assert row["has_genomics"] is False
     # recent_vitals struct is always present; members are null when absent
     assert row["recent_vitals"]["heart_rate"] is None
+
+
+def test_as_of_date_onset_and_abatement_gates():
+    # Synthetic Silver: one patient, two encounters; a chronic condition, one that resolves
+    # between them, and one not yet onset at the first encounter; one active + one stopped med.
+    enc_rows = [
+        {"encounter_id": "e1", "patient_id": "p", "start_date": "2021-01-01", "type_display": "x"},
+        {"encounter_id": "e2", "patient_id": "p", "start_date": "2021-12-31", "type_display": "x"},
+    ]
+    cond_rows = [
+        {
+            "condition_id": "c1",
+            "patient_id": "p",
+            "display": "Chronic dz",
+            "onset_date": "2019-01-01",
+            "abatement_date": None,
+        },
+        {
+            "condition_id": "c2",
+            "patient_id": "p",
+            "display": "Acute dz",
+            "onset_date": "2020-06-01",
+            "abatement_date": "2021-06-01",
+        },
+        {
+            "condition_id": "c3",
+            "patient_id": "p",
+            "display": "Later dz",
+            "onset_date": "2021-09-01",
+            "abatement_date": None,
+        },
+    ]
+    med_rows = [
+        {
+            "medication_request_id": "m1",
+            "patient_id": "p",
+            "display": "Drug A",
+            "status": "active",
+            "authored_on": "2021-03-01",
+        },
+        {
+            "medication_request_id": "m2",
+            "patient_id": "p",
+            "display": "Drug B",
+            "status": "stopped",
+            "authored_on": "2020-01-01",
+        },
+    ]
+    silver = {name: spec.build([], INGEST_TS) for name, spec in SILVER_TABLES.items()}
+    silver["encounter"] = SILVER_TABLES["encounter"].build(enc_rows, INGEST_TS)
+    silver["patient"] = SILVER_TABLES["patient"].build(
+        [{"patient_id": "p", "gender": "female"}], INGEST_TS
+    )
+    silver["condition"] = SILVER_TABLES["condition"].build(cond_rows, INGEST_TS)
+    silver["medication_request"] = SILVER_TABLES["medication_request"].build(med_rows, INGEST_TS)
+
+    g = {
+        r["encounter_id"]: r
+        for r in build_encounter_summary(silver, created_ts=CREATED_TS).to_pylist()
+    }
+    # e1 (2021-01-01): chronic active; acute active (abates 2021-06, later); future not yet onset.
+    assert g["e1"]["active_conditions"] == ["Acute dz", "Chronic dz"]
+    # e2 (2021-12-31): chronic active; acute resolved (abated 2021-06-01); future now onset.
+    assert g["e2"]["active_conditions"] == ["Chronic dz", "Later dz"]
+    # Drug A authored 2021-03-01: not yet started at e1, active by e2. Drug B stopped -> excluded.
+    assert g["e1"]["active_medications"] == []
+    assert g["e2"]["active_medications"] == ["Drug A"]
 
 
 def test_required_fields_present_and_non_null(gold):

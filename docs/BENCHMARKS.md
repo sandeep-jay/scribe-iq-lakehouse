@@ -64,7 +64,7 @@ Delta table (overwrite + CDC) plus the corpus manifest.
 
 | Metric | Value |
 |--------|-------|
-| Wall clock | **~5.3s** (4.4s user · 1.2s sys) |
+| Wall clock | **~6.5s** (incl. patient-level as-of-date joins for conditions/meds, ADR-014) |
 | Output rows | 143,946 (one per encounter) |
 | Output columns | 22 (incl. nested struct vitals/imaging/versions + array conditions/meds/labs) |
 | Nested types in Delta | round-trip verified; CDC enabled |
@@ -81,8 +81,9 @@ Delta table (overwrite + CDC) plus the corpus manifest.
 | With imaging | 3,752 | 298 carry DICOM `study_date` (ADR-013) |
 | With genomics | 419 | synthetic (ADR-007) |
 | With ECG | 0 | no ECG in Coherent FHIR |
-| Avg conditions / encounter | 0.08 | encounter-grain; sparse by design (ADR-012 / CORPUS_CONTRACT) |
-| Avg medications / encounter | 0.05 | encounter-grain; see limitation note |
+| Avg conditions / encounter | 9.57 | as-of-date problem list, onset+abatement gated (ADR-014) |
+| Avg medications / encounter | 1.66 | as-of-date, status=active (ADR-014) |
+| Encounters w/ empty problem list | 0.9% | down from the majority under the old encounter-grain join |
 
 ## Engine comparison (target matrix)
 

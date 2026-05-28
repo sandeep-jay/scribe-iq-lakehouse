@@ -15,3 +15,4 @@
 | 011 | Generated-first documentation | Accepted | 2026-05-27 |
 | 012 | Gold encounter_summary — engine, grain, lineage | Accepted | 2026-05-27 |
 | 013 | DICOM ingest, FHIR↔DICOM linkage, header extraction | Accepted | 2026-05-27 |
+| 014 | Problem-list-as-of-date for active_conditions/medications | Accepted | 2026-05-27 |

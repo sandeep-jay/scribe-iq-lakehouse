@@ -9,10 +9,12 @@ caller reads Silver via the platform and writes the result via the platform. Pol
 used purely as an in-process join/aggregation engine (it is engine-agnostic, not a
 storage/cloud dependency); the output schema is defined explicitly, never inferred.
 
-Grain: one row per ``silver.encounter`` row. Conditions/medications/observations/
-procedures are aggregated to that encounter; SOAP/ECG/imaging/genomic context is the
-latest record linked to the encounter. Optional clinical context is null (or an empty
-list) when absent — the corpus contract (§5.7) requires consumers to handle that.
+Grain: one row per ``silver.encounter`` row. ``active_conditions``/``active_medications``
+are the patient's problem list *as of the encounter date* (onset/abatement and authored
+gated — ADR-014), not just what was recorded at that encounter. Observations/procedures
+are aggregated to the encounter; SOAP/ECG/imaging/genomic context is the latest record
+linked to it. Optional clinical context is null (or an empty list) when absent — the
+corpus contract (§5.7) requires consumers to handle that.
 """
 
 from __future__ import annotations
@@ -30,7 +32,8 @@ from local.transforms.schema_utils import TS
 
 #: Corpus contract version (semver). Bump on breaking schema/semantics changes — both
 #: scribe-iq and clinical-bert-pipeline pin against this (see docs/CORPUS_CONTRACT.md, §5.7).
-CONTRACT_VERSION = "1.0.0"
+#: 1.1.0 — active_conditions/active_medications became problem-list-as-of-date (ADR-014).
+CONTRACT_VERSION = "1.1.0"
 
 #: Silver tables consumed, in the order recorded in the ``silver_versions`` lineage struct.
 SILVER_SOURCES: tuple[str, ...] = (
@@ -86,9 +89,6 @@ _LOINC_O2_SAT = ("2708-6", "59408-5")  # SpO2 — two LOINC variants seen in Coh
 _LOINC_BLOOD_PRESSURE = "85354-9"  # component-based: systolic 8480-6 / diastolic 8462-4
 _LOINC_BP_SYSTOLIC = "8480-6"
 _LOINC_BP_DIASTOLIC = "8462-4"
-
-# A condition/medication is "active" unless explicitly marked otherwise.
-_INACTIVE_CONDITION_STATUS = ("resolved", "inactive", "remission")
 
 # --------------------------------------------------------------------- schema
 
@@ -185,8 +185,10 @@ def build_encounter_summary(
 
     base = _encounter_base(frames["encounter"], frames["patient"])
     joined = (
-        base.join(_conditions(frames["condition"]), on="encounter_id", how="left")
-        .join(_medications(frames["medication_request"]), on="encounter_id", how="left")
+        base.join(_active_conditions(base, frames["condition"]), on="encounter_id", how="left")
+        .join(
+            _active_medications(base, frames["medication_request"]), on="encounter_id", how="left"
+        )
         .join(_procedures(frames["procedure"]), on="encounter_id", how="left")
         .join(_labs(frames["observation"]), on="encounter_id", how="left")
         .join(_vitals(frames["observation"]), on="encounter_id", how="left")
@@ -242,25 +244,49 @@ def _age_expr(birth: pl.Expr, on: pl.Expr) -> pl.Expr:
     return (on.dt.year() - birth.dt.year() - not_yet.cast(pl.Int32)).cast(pl.Int32)
 
 
-def _conditions(condition: pl.DataFrame) -> pl.DataFrame:
-    """Distinct display names of active conditions per encounter."""
+def _active_conditions(base: pl.DataFrame, condition: pl.DataFrame) -> pl.DataFrame:
+    """Patient problem list active *as of each encounter date* (ADR-014).
+
+    A condition is active at an encounter if it started on/before the encounter date and
+    had not resolved (abated) by then — so a chronic condition recorded once carries
+    forward to every later encounter, not just the one where it was first recorded.
+    """
+    enc = base.select("encounter_id", "patient_id", "encounter_date")
+    cond = condition.filter(pl.col("display").is_not_null()).select(
+        "patient_id",
+        "display",
+        pl.col("onset_date").dt.date().alias("onset"),
+        pl.col("abatement_date").dt.date().alias("abatement"),
+    )
     return (
-        condition.filter(
-            pl.col("display").is_not_null()
-            & (
-                pl.col("clinical_status").is_null()
-                | ~pl.col("clinical_status").str.to_lowercase().is_in(_INACTIVE_CONDITION_STATUS)
-            )
+        enc.join(cond, on="patient_id", how="inner")
+        .filter(
+            (pl.col("onset").is_null() | (pl.col("onset") <= pl.col("encounter_date")))
+            & (pl.col("abatement").is_null() | (pl.col("abatement") > pl.col("encounter_date")))
         )
         .group_by("encounter_id")
         .agg(pl.col("display").unique().sort().alias("active_conditions"))
     )
 
 
-def _medications(medication: pl.DataFrame) -> pl.DataFrame:
-    """Distinct display names of active medication requests per encounter."""
-    return (
+def _active_medications(base: pl.DataFrame, medication: pl.DataFrame) -> pl.DataFrame:
+    """Active medications as of each encounter date (ADR-014).
+
+    FHIR has no medication stop date, so this is a ``status == "active"`` approximation: a
+    med authored on/before the encounter date and still marked active carries forward to
+    that encounter. Distinct meds are pre-aggregated to their earliest start to keep the
+    patient-level join small. Historical point-in-time for stopped meds is not recoverable
+    from FHIR alone (see CORPUS_CONTRACT).
+    """
+    enc = base.select("encounter_id", "patient_id", "encounter_date")
+    starts = (
         medication.filter(pl.col("display").is_not_null() & (pl.col("status") == "active"))
+        .group_by("patient_id", "display")
+        .agg(pl.col("authored_on").dt.date().min().alias("start"))
+    )
+    return (
+        enc.join(starts, on="patient_id", how="inner")
+        .filter(pl.col("start").is_null() | (pl.col("start") <= pl.col("encounter_date")))
         .group_by("encounter_id")
         .agg(pl.col("display").unique().sort().alias("active_medications"))
     )

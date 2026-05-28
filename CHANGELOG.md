@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Session 3 — Problem-list-as-of-date corpus enrichment (ADR-014, contract v1.1.0)
+#### Changed
+- `gold.encounter_summary` `active_conditions` / `active_medications` now reflect the
+  patient's clinical state **as of each encounter date**, not just what was recorded at that
+  encounter (ADR-014). Conditions: `onset ≤ date AND (abatement null OR abatement > date)` —
+  chronic conditions carry forward, resolved ones drop off. Medications: `status=active` and
+  authored ≤ date. Same `array[string]` schema, changed semantics → **contract v1.1.0** (MINOR).
+- `silver.condition`: added `abatement_date` (from `Condition.abatementDateTime`) — additive
+  column; `fhir_parser.extract_condition` now emits it.
+- `local/gold/encounter_summary.py`: `_conditions`/`_medications` → `_active_conditions`/
+  `_active_medications` patient-level as-of-date joins (meds pre-aggregated to earliest start).
+- Regenerated `docs/DATA_DICTIONARY.md` (condition column) + `schemas/gold_encounter_summary.json`
+  (x-contract-version 1.1.0).
+#### Impact (full run)
+- **avg conditions/encounter 0.08 → 9.57; avg medications/encounter 0.05 → 1.66**; encounters
+  with an empty problem list dropped to 0.9%. Problem lists are clinically coherent and
+  temporally gated; no duplicates. DICOM enrichment intact (298 studies). Gold build ~6.5s.
+#### Limitation
+- FHIR has no medication stop date, so `active_medications` is a forward `status=active`
+  approximation (a med stopped after a past encounter still won't appear on it). Conditions
+  are temporally precise. Documented in CORPUS_CONTRACT (ADR-014).
+#### Tests
+- New as-of-date unit test (onset gate, abatement exclusion, med start gate) + fixture
+  carry-forward test; condition schema test covers `abatement_date`. 116 tests pass.
+
 ### Session 3 — DICOM ingest + imaging header extraction (ADR-013)
 #### Added
 - `local/ingest/dicom_index.py`: `DicomIndex` maps DICOM `StudyInstanceUID` → local `.dcm`

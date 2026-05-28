@@ -29,6 +29,7 @@ CONDITION_SCHEMA = pa.schema(
         ("display", pa.string()),
         ("clinical_status", pa.string()),
         ("onset_date", TS),
+        ("abatement_date", TS),
         ("recorded_date", TS),
         ("source_file", pa.string()),
         ("ingest_timestamp", TS),

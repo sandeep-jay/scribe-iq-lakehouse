@@ -282,5 +282,5 @@
   ],
   "title": "gold.encounter_summary",
   "type": "object",
-  "x-contract-version": "1.0.0"
+  "x-contract-version": "1.1.0"
 }

@@ -392,6 +392,7 @@ class FHIRBundleParser:
             "display": display,
             "clinical_status": str(clinical_status or ""),
             "onset_date": resource.get("onsetDateTime"),
+            "abatement_date": resource.get("abatementDateTime"),
             "recorded_date": resource.get("recordedDate"),
         }
 
