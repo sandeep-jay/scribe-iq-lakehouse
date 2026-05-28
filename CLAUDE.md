@@ -92,7 +92,6 @@ Checklist: docs/roadmap/scribe-iq-lakehouse-spec.md section 15.2
 ## Skills available (lazy-loaded from .claude/skills/)
 /healthcare-data  — FHIR handling, Base64 decode, DICOM, Synthea limitations
 /delta-patterns   — Delta Lake, CDC, medallion rules, MERGE patterns, streaming
-/mlops            — MLflow, DVC, eval_report.json, Apple Silicon training config
 /session-end      — Full end-of-session protocol
 /new-transform    — Scaffold transform + test + Fabric notebook
 /new-adr          — Write ADR with template, update index

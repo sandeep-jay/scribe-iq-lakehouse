@@ -57,16 +57,6 @@ path = platform.storage_path("silver", "soap_note")
 path = "abfss://lakehouse@onelake.dfs.fabric.microsoft.com/silver/soap_note"
 ```
 
-## Streaming (Fabric Auto Loader)
-```python
-df = (spark.readStream
-      .format("cloudFiles")
-      .option("cloudFiles.format", "json")
-      .option("cloudFiles.schemaLocation", f"{BRONZE}/_schemas/")
-      .load(f"{BRONZE}/fhir/"))
-```
-Simulate stream by dropping cohort partitions sequentially.
-
 ## delta-rs (local lite tier)
 ```python
 from deltalake import write_deltalake, DeltaTable
@@ -79,8 +69,8 @@ write_deltalake(path, df.to_arrow(), mode="append")
 - Row count >= minimum threshold
 - Required columns non-null
 - Referential integrity (FKs resolve)
-- Clinical range checks (heart rate 30-250, age 0-130)
-- Row count drift < 10% vs last run
+- Project-specific range / drift checks belong in the validation rules
+  (see `core/validation/`), not in this generic skill
 
 ## Common gotchas
 - DeltaTable.isDeltaTable() before first MERGE

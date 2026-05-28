@@ -9,7 +9,6 @@ Write an ADR for: $ARGUMENTS
 
 **Date:** {today}
 **Status:** Accepted
-**Deciders:** Sandeep Jayaprakash
 
 ## Context
 What situation prompted this decision?

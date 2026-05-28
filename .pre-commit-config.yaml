@@ -18,7 +18,7 @@ repos:
     rev: 1.7.8
     hooks:
       - id: bandit
-        args: ["-r", "local/", "-ll", "--skip", "B101"]
+        args: ["-r", "core/", "fabric/", "-ll", "--skip", "B101"]
         # B101 = assert_used — allowed in tests, skip globally
 
   # Semgrep — custom healthcare + platform rules
@@ -51,19 +51,19 @@ repos:
       - id: ruff-format
 
   # Generated docs must match the code. READ-ONLY (--check): never writes a file,
-  # only fails the commit telling you to run `python scripts/gen_data_dictionary.py`.
+  # only fails the commit telling you to run `python core/scripts/gen_data_dictionary.py`.
   # Runs in the project env (venv active locally, or pip-installed deps in CI).
   - repo: local
     hooks:
       - id: data-dictionary-current
         name: data dictionary is current (generated)
-        entry: python scripts/gen_data_dictionary.py --check
+        entry: python core/scripts/gen_data_dictionary.py --check
         language: system
         pass_filenames: false
-        files: '^(local/transforms/registry\.py|local/validation/(schema_registry|validate)\.py|scripts/gen_data_dictionary\.py|docs/DATA_DICTIONARY\.md)$'
+        files: '^(core/transforms/registry\.py|core/validation/(schema_registry|validate)\.py|core/scripts/gen_data_dictionary\.py|docs/DATA_DICTIONARY\.md)$'
       - id: corpus-schema-current
         name: corpus JSON Schema is current (generated)
-        entry: python scripts/gen_corpus_schema.py --check
+        entry: python core/scripts/gen_corpus_schema.py --check
         language: system
         pass_filenames: false
-        files: '^(local/gold/encounter_summary\.py|scripts/gen_corpus_schema\.py|schemas/gold_encounter_summary\.json)$'
+        files: '^(core/gold/encounter_summary\.py|core/scripts/gen_corpus_schema\.py|schemas/gold_encounter_summary\.json)$'

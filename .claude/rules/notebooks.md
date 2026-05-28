@@ -43,4 +43,4 @@ A reviewer must be able to see readable clinical text in the notebook output cel
 
 ## Screenshot rule
 Capture screenshots of notebook output as you go — don't batch at the end.
-Evidence of a running Fabric notebook is the priority before trial expires.
+Evidence of a running Fabric notebook is the priority during the trial window.
