@@ -197,9 +197,9 @@ Or run the full one-patient walkthrough for a rendered Bronze → Silver → Gol
 (also what's reused by the Dagster asset metadata, see §6):
 
 ```bash
-python -m scripts.demo_walkthrough              # auto-picks a "good demo" patient
-python -m scripts.demo_walkthrough --pause 1.5  # 1.5s between sections (screencast pacing)
-python -m scripts.demo_walkthrough --patient-id <uuid>   # reproducible
+python -m core.scripts.demo_walkthrough              # auto-picks a "good demo" patient
+python -m core.scripts.demo_walkthrough --pause 1.5  # 1.5s between sections (screencast pacing)
+python -m core.scripts.demo_walkthrough --patient-id <uuid>   # reproducible
 ```
 
 For **interactive SQL exploration** — corpus headlines, top conditions, full SOAP notes,
@@ -212,7 +212,7 @@ duckdb docs/demo/notebooks/demo.duckdb -ui           # opens http://localhost:42
 
 20 SQL cells over the Delta tables; see [`docs/demo/notebooks/README.md`](demo/notebooks/README.md)
 for the per-cell guide and how to regenerate the `.duckdb` (gitignored) if missing.
-For recording a portfolio demo video around it, see [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
+For recording a demo video around it, see [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
 
 ---
 
@@ -231,8 +231,8 @@ export DAGSTER_HOME="$PWD/dagster_home" && mkdir -p "$DAGSTER_HOME"
 dagster dev                    # opens http://localhost:3000 (asset graph)
 ```
 
-`dagster dev` reads `[tool.dagster] module_name = "orchestration.definitions"` from
-`pyproject.toml`. The asset graph nodes are:
+`dagster dev` reads `[tool.dagster] module_name = "core.orchestration.dagster.definitions"`
+from `pyproject.toml`. The asset graph nodes are:
 
 ```
 bronze_fhir [cohort-partitioned]
@@ -275,7 +275,7 @@ Each asset surfaces inline metadata so the graph isn't just lineage — it's the
   schema** + one sample encounter rendered as a Markdown card (patient/date/age + SOAP
   note text + active conditions / medications / vitals / imaging).
 
-The same renderings are reused by `python -m scripts.demo_walkthrough` for a CLI audience
+The same renderings are reused by `python -m core.scripts.demo_walkthrough` for a CLI audience
 and by the DuckDB UI notebook for an SQL audience (see §5 above and
 [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md) for the demo-video recording guide).
 
@@ -315,7 +315,7 @@ manually once the cohorts of interest are present).
 Assets return `MaterializeResult` (metadata only) — **the `LakehousePlatform` writes the
 Delta bytes**, not a Dagster IOManager. Single persistence authority; Dagster owns the DAG
 and observability. The `[orchestration]` extra is *optional* by design — CI and the CLI
-path don't need it; `tests/test_dagster_defs.py` uses `pytest.importorskip` so the suite
+path don't need it; `core/tests/test_dagster_defs.py` uses `pytest.importorskip` so the suite
 collects cleanly without it.
 
 ---

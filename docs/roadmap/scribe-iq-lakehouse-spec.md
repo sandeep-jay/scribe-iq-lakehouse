@@ -187,7 +187,7 @@ scribe-iq-lakehouse/
 │   └── config/
 │       └── lakehouse_config.json     # OneLake paths, table names, thresholds
 │
-├── local/
+├── core/
 │   ├── ingest/
 │   │   ├── __init__.py
 │   │   ├── download.py              # S3 → local Bronze (no-sign-request)
@@ -215,16 +215,24 @@ scribe-iq-lakehouse/
 │   │   ├── schema_registry.py       # Expected schemas per Silver table
 │   │   └── validate.py              # Row counts, null checks, referential integrity
 │   │
-│   └── pipeline.py                  # Local end-to-end orchestration
+│   ├── surfaces/cli/pipeline.py     # Local end-to-end orchestration
+│   ├── tests/
+│   │   ├── fixtures/
+│   │   │   └── sample_bundle.json   # 5-patient FHIR bundle for unit tests
+│   │   ├── test_fhir_parser.py
+│   │   ├── test_silver_soap_notes.py
+│   │   ├── test_silver_ecg.py
+│   │   ├── test_gold_encounter_summary.py
+│   │   └── test_validation.py
+│   └── scripts/                     # gen_data_dictionary.py, gen_corpus_schema.py, demo_walkthrough.py
 │
-├── tests/
-│   ├── fixtures/
-│   │   └── sample_bundle.json       # 5-patient FHIR bundle for unit tests
-│   ├── test_fhir_parser.py
-│   ├── test_silver_soap_notes.py
-│   ├── test_silver_ecg.py
-│   ├── test_gold_encounter_summary.py
-│   └── test_validation.py
+├── fabric/                          # Fabric-specific platform + notebooks + deploy (ADR-017)
+│   ├── platform.py
+│   ├── notebooks/
+│   ├── environments/
+│   ├── deploy/
+│   ├── tests/
+│   └── docs/
 │
 ├── docs/
 │   ├── index.md                     # MkDocs home (mirrors campus-rag pattern)
@@ -278,7 +286,7 @@ scribe-iq-lakehouse/
 **Local approach (fallback / delta-rs mirror):**
 
 ```python
-# local/ingest/download.py
+# core/ingest/download.py
 # aws s3 sync s3://synthea-open-data/coherent/fhir/ data/bronze/fhir/ --no-sign-request
 # Partition output: data/bronze/fhir/cohort=A/, cohort=B/, cohort=C/
 # Write partition manifest to data/bronze/_metadata/manifest.json
@@ -312,7 +320,7 @@ df = (spark.readStream
 **Local simulation:**
 
 ```python
-# local/ingest/streaming_sim.py
+# core/ingest/streaming_sim.py
 # Uses watchdog to monitor data/bronze/fhir/
 # Triggers silver transform when new cohort partition lands
 # Writes checkpoint to data/bronze/_checkpoints/
@@ -812,8 +820,8 @@ encounter_summary = (
 ```yaml
 jobs:
   lint:
-    - ruff check local/ tests/
-    - black --check local/ tests/
+    - ruff check core/ fabric/
+    - black --check core/ fabric/
 
   test:
     - pytest tests/ -v
@@ -822,7 +830,7 @@ jobs:
     #            SOAP section detection, ECG metadata extraction
 
   validate_schemas:
-    - python -m local.validation.validate --fixture
+    - python -m core.validation.validate --fixture
     # Runs validation rules against fixture data
     # Ensures schema contract is not broken on PR
 ```
@@ -834,7 +842,7 @@ on:
   pull_request:
     paths:
       - schemas/**
-      - local/validation/schema_registry.py
+      - core/validation/schema_registry.py
 
 jobs:
   schema_guard:
@@ -862,7 +870,7 @@ jobs:
 
 ---
 
-## 17. Roadmap
+## 9. Roadmap
 
 Every roadmap item is documented honestly — what it requires,
 why it is deferred, and what value it adds when built.
@@ -1090,7 +1098,7 @@ Clear separation maintained.
 
 ---
 
-## 9. Implementation Sequence for Claude Code
+## 10. Implementation Sequence for Claude Code
 
 ### Session 1 — Repo scaffold + FHIR parser foundation
 
@@ -1099,7 +1107,7 @@ Clear separation maintained.
 2. Download 5-patient sample bundle from S3 (no-sign-request)
    aws s3 cp s3://synthea-open-data/coherent/fhir/ tests/fixtures/
              --no-sign-request --recursive --max-keys 5
-3. local/transforms/fhir_parser.py
+3. core/transforms/fhir_parser.py
    - FHIRBundleParser class
    - extract_patient, extract_encounter
    - extract_soap_note (Base64 decode + SOAP section detection)
@@ -1115,26 +1123,26 @@ Goal: parser handles all resource types, tests pass on fixture data
 ### Session 2 — Local Bronze + Silver pipeline
 
 ```
-1. local/ingest/download.py — S3 sync with cohort partitioning
-2. local/ingest/bronze_landing.py — write Delta via delta-rs
-3. local/ingest/streaming_sim.py — watchdog-based Auto Loader sim
-4. local/transforms/silver_patient.py
-5. local/transforms/silver_encounter.py
-6. local/transforms/silver_clinical.py (Condition, Observation, Med, Procedure)
-7. local/transforms/silver_soap_notes.py
-8. local/transforms/silver_ecg.py
-9. local/transforms/silver_imaging.py
-10. local/transforms/silver_genomics.py
-11. local/validation/schema_registry.py + validate.py
-12. local/pipeline.py — end-to-end orchestration
+1. core/ingest/download.py — S3 sync with cohort partitioning
+2. core/ingest/bronze_landing.py — write Delta via delta-rs
+3. core/ingest/streaming_sim.py — watchdog-based Auto Loader sim
+4. core/transforms/silver_patient.py
+5. core/transforms/silver_encounter.py
+6. core/transforms/silver_clinical.py (Condition, Observation, Med, Procedure)
+7. core/transforms/silver_soap_notes.py
+8. core/transforms/silver_ecg.py
+9. core/transforms/silver_imaging.py
+10. core/transforms/silver_genomics.py
+11. core/validation/schema_registry.py + validate.py
+12. core/surfaces/cli/pipeline.py — end-to-end orchestration
 Goal: full pipeline runs locally on 5-patient fixture, all Silver tables written
 ```
 
 ### Session 3 — Gold layer + corpus contract
 
 ```
-1. local/gold/encounter_summary.py — denormalize Silver → Gold
-2. local/gold/corpus_manifest.py — lineage tracking
+1. core/gold/encounter_summary.py — denormalize Silver → Gold
+2. core/gold/corpus_manifest.py — lineage tracking
 3. schemas/ — JSON Schema files for all Silver + Gold tables
 4. docs/CORPUS_CONTRACT.md — handoff schema for Ollama spec
 5. tests/test_gold_encounter_summary.py
@@ -1156,7 +1164,7 @@ Goal: Gold encounter_summary populated, corpus contract documented
 8. dagster + dagster-webserver in pyproject [dev]; ADR-015/016 written
 Goal: `dagster dev` shows the medallion asset graph; per-cohort backfill works;
       assets reuse the pure transforms — zero duplicate logic (third execution surface
-      alongside the CLI and the Fabric notebooks). local/pipeline.py CLI kept for CI.
+      alongside the CLI and the Fabric notebooks). core/surfaces/cli/pipeline.py CLI kept for CI.
 ```
 
 ### Session 5 — Fabric notebooks
@@ -1199,7 +1207,7 @@ Goal: Public repo, Fabric screenshots captured before trial expires
 
 ---
 
-## 10. README Structure
+## 11. README Structure
 
 ```
 # scribe-iq-lakehouse
@@ -1221,7 +1229,7 @@ One-line: Production-pattern healthcare data lakehouse on Synthea Coherent.
 ## Streaming simulation (Auto Loader pattern explained briefly)
 
 ## Quick start
-  Local: python local/pipeline.py
+  Local: python -m core.surfaces.cli.pipeline
   Fabric: Run notebooks 00 → 10 in sequence
 
 ## Silver tables (link to DATA_DICTIONARY.md)
@@ -1249,7 +1257,7 @@ One-line: Production-pattern healthcare data lakehouse on Synthea Coherent.
 
 ---
 
-## 11. Fabric Trial — Priority Capture Checklist
+## 12. Fabric Trial — Priority Capture Checklist
 
 Before trial expires, ensure these are captured permanently:
 
@@ -1270,7 +1278,7 @@ The Delta format is identical — same notebooks, different storage path.
 
 ---
 
-## 12. Downstream Connections
+## 13. Downstream Connections
 
 ### → scribe-iq
 
@@ -1310,7 +1318,7 @@ The Delta format is identical — same notebooks, different storage path.
 
 ---
 
-## 13. Local Spark + Ollama notes
+## 14. Local Spark + Ollama notes
 
 Local pipeline work runs on Apple Silicon (MPS). Key configs:
 
@@ -1333,7 +1341,7 @@ Ollama on Apple Silicon:
 
 ---
 
-## 14. Fabric DevOps, Observability, and Production Engineering
+## 15. Fabric DevOps, Observability, and Production Engineering
 
 This section defines everything required to run the lakehouse pipeline
 as a production-grade system in Fabric — not just notebooks that work once.
@@ -1776,7 +1784,7 @@ Data classification:
 
 ---
 
-## 15. Fabric Demo Plan
+## 16. Fabric Demo Plan
 
 ### 15.1 What Makes a Successful Demo
 
@@ -2030,7 +2038,7 @@ git clone https://github.com/sandeep-jay/scribe-iq-lakehouse
 pip install -r requirements-lite.txt
 
 # Download 50-patient sample from Synthea Coherent open data
-python local/pipeline_lite.py --cohort sample
+python -m core.surfaces.cli.pipeline --cohort sample
 
 # Inspect Gold output via DuckDB
 python -c "
@@ -2062,7 +2070,7 @@ rich>=13.0
 
 ---
 
-## 16. Platform Abstraction Layer
+## 17. Platform Abstraction Layer
 
 Full specification — engine-agnostic design for multi-cloud portability.
 
@@ -2080,7 +2088,7 @@ Transform function
         └── FabricPlatform     → spark.createDataFrame(arrow) → Delta write
 ```
 
-### Abstract interface — `local/platform/base.py`
+### Abstract interface — `core/platform/base.py`
 
 ```python
 from abc import ABC, abstractmethod
@@ -2137,7 +2145,7 @@ class LakehousePlatform(ABC):
 ### Platform implementations
 
 ```
-local/platform/
+core/platform/
   base.py           Abstract interface (build now)
   factory.py        Env var router (build now)
   local_lite.py     Polars + DuckDB + delta-rs (build week 2)
@@ -2148,7 +2156,7 @@ local/platform/
   gcp.py            Stub + migration notes (roadmap)
 ```
 
-### Factory — `local/platform/factory.py`
+### Factory — `core/platform/factory.py`
 
 ```python
 import os
@@ -2156,12 +2164,12 @@ import os
 def get_platform() -> LakehousePlatform:
     p = os.getenv("LAKEHOUSE_PLATFORM", "local_lite")
     platforms = {
-        "fabric":       "local.platform.fabric.FabricPlatform",
-        "databricks":   "local.platform.databricks.DatabricksPlatform",
-        "aws":          "local.platform.aws.AWSPlatform",
-        "gcp":          "local.platform.gcp.GCPPlatform",
-        "local_spark":  "local.platform.local_spark.LocalSparkPlatform",
-        "local_lite":   "local.platform.local_lite.LocalLitePlatform",
+        "fabric":       "fabric.platform.FabricPlatform",
+        "databricks":   "databricks.platform.DatabricksPlatform",
+        "aws":          "aws.platform.AWSPlatform",
+        "gcp":          "gcp.platform.GCPPlatform",
+        "local_spark":  "core.platform.local_spark.LocalSparkPlatform",
+        "local_lite":   "core.platform.local_lite.LocalLitePlatform",
     }
     module_path, class_name = platforms[p].rsplit(".", 1)
     module = importlib.import_module(module_path)
@@ -2173,7 +2181,7 @@ One env var. Zero code changes to migrate.
 ### Migration stub pattern
 
 ```python
-# local/platform/databricks.py
+# core/platform/databricks.py
 
 class DatabricksPlatform(LakehousePlatform):
     """
@@ -2188,7 +2196,7 @@ class DatabricksPlatform(LakehousePlatform):
       Delta Lake      → identical API, no changes
       MLflow          → native, better than Fabric implementation
 
-    All transforms in local/transforms/ require zero changes.
+    All transforms in core/transforms/ require zero changes.
     Estimated migration effort: 2-3 days.
     """
 
