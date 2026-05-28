@@ -1,4 +1,4 @@
-# HANDOFF — Session 3 (Gold layer + corpus contract)
+# HANDOFF — Session 3 (Gold layer · DICOM · as-of-date · docs)
 **Date:** 2026-05-27
 **Repo:** scribe-iq-lakehouse
 **Branch:** main
@@ -19,8 +19,9 @@ reflect the patient's state as of each encounter date (conditions gated by onset
 meds by status=active + authored date), lifting **avg conditions/encounter 0.08→9.57 and
 meds 0.05→1.66**. Full clean rebuild: **143,946 encounter summaries from 1,278 patients**
 (Silver ~2m30s + Gold ~6.5s), nested Delta types + CDC verified. Corpus contract shipped three
-ways (generated JSON Schema + human doc + conformance test). 116 tests passing; ruff/black
-clean. Fabric notebooks (Session 4) are next.
+ways (generated JSON Schema + human doc + conformance test). Finally, rewrote the Session-1
+README stub into a full overview and added an operational `docs/RUNBOOK.md`. 116 tests passing;
+ruff/black clean. Fabric notebooks (Session 4) are next.
 
 ---
 
@@ -30,14 +31,14 @@ clean. Fabric notebooks (Session 4) are next.
 - `local/gold/encounter_summary.py` — `build_encounter_summary(silver, *, created_ts,
   silver_versions=None) -> pa.Table`. Polars joins/aggs; explicit `GOLD_SCHEMA` (22 cols).
   Deterministic `summary_id` (UUIDv5 of encounter_id); BP parsed from `components_json`;
-  anniversary-based `patient_age`. Defines `CONTRACT_VERSION="1.0.0"`, `REQUIRED_FIELDS`,
-  `OPTIONAL_FIELDS`, `SILVER_SOURCES`.
+  anniversary-based `patient_age`. Defines `CONTRACT_VERSION="1.1.0"`, `REQUIRED_FIELDS`,
+  `OPTIONAL_FIELDS`, `SILVER_SOURCES`. Conditions/meds use as-of-date joins (ADR-014).
 - `local/gold/corpus_manifest.py` — `build_corpus_manifest(...)` → JSON dict (lineage + stats).
 - `local/pipeline.py` — `build_gold()` + CLI `--with-gold` / `--gold-only`.
 - Platform: `table_version(layer, table)` (delta-rs `version()` on local_lite; `None` on base),
   `write_gold_manifest()`, plus `read_gold()` on local_lite.
 - `scripts/gen_corpus_schema.py` → `schemas/gold_encounter_summary.json` (`--check` for CI).
-- `docs/CORPUS_CONTRACT.md`, ADR-012, `tests/test_gold_encounter_summary.py` (17 tests).
+- `docs/CORPUS_CONTRACT.md`, ADR-012, `tests/test_gold_encounter_summary.py` (19 tests).
 - **DICOM modality (ADR-013):** `local/ingest/dicom_index.py` (`DicomIndex`, UID→.dcm),
   `download_assets()` + `--with-dicom`/`--with-csv`/`--assets-only`,
   `fhir_parser.parse_bundle(dicom_resolver=...)` + `imaging_study_uid()`, placeholder→null +
@@ -114,9 +115,10 @@ the `05_silver_soap_notes` demo centerpiece (MUST display a decoded SOAP note), 
 **Watch out:** `FabricPlatform` is registered in the factory but NOT implemented — implement
 it (Spark read/write + CDC + `table_version`/`write_gold_manifest`) before the notebooks run.
 
-**Alternative if Fabric is blocked:** Session 5 synthesis docs (REVIEWER_GUIDE, full README,
-PRODUCTION_NOTES, STREAMING_DESIGN, MkDocs + mkdocstrings) — all deferred and now unblocked
-since Gold exists.
+**Alternatives if Fabric is blocked / preferred to stay local:** (a) wire the corpus into
+`scribe-iq` — swap its 19-patient dev corpus for the 1,278-patient `gold.encounter_summary`;
+(b) remaining Session 5 synthesis docs — REVIEWER_GUIDE, PRODUCTION_NOTES, STREAMING_DESIGN,
+MkDocs + mkdocstrings (README + RUNBOOK already done this session).
 
 ---
 
@@ -124,7 +126,8 @@ since Gold exists.
 
 | Decision | Options | Recommendation | Status |
 |----------|---------|----------------|--------|
-| Conditions/meds grain | encounter-recorded vs patient problem-list-as-of-date | Encounter-recorded for v1.0; problem-list = future MINOR | DECIDED (ADR-012); revisit if corpus quality needs it |
+| Conditions/meds grain | encounter-recorded vs patient problem-list-as-of-date | Problem-list-as-of-date | DONE — ADR-014, contract v1.1.0 (was the deferred ADR-012 MINOR) |
+| Precise med timeline | FHIR `status=active` approx vs CSV `START`/`STOP` | Keep FHIR approx (FHIR-first, ADR-013) | OPEN — revisit if med fidelity matters downstream |
 | Fabric platform impl | Spark in FabricPlatform vs reuse local transforms only | Implement FabricPlatform I/O; transforms unchanged | Session 4 |
 | Gold on Fabric | rerun build_gold via Spark-backed platform vs Spark-native SQL | Reuse pure build_gold (portable) | Lean reuse |
 | Contract version bump trigger | when to go 1.1 / 2.0 | semver policy in CORPUS_CONTRACT (MINOR=add optional, MAJOR=break) | DECIDED |
@@ -162,13 +165,14 @@ M5 Max: arriving ~June 2, 2026
 - local/platform/local_lite.py — read_gold(), table_version(), write_gold_manifest()
 - scripts/gen_corpus_schema.py — created; schemas/gold_encounter_summary.json — generated
 - docs/CORPUS_CONTRACT.md — created (now v1.1.0); docs/adr/{012,013,014}-*.md — created
+- docs/RUNBOOK.md — created (operational runbook); README.md — full rewrite from Session-1 stub
 - docs/adr/README.md, docs/ARCHITECTURE.md, docs/BENCHMARKS.md, docs/DATA_DICTIONARY.md(gen) — updated
 - tests/test_gold_encounter_summary.py (19) + tests/test_dicom_extraction.py (11) — created
 - tests/fixtures/sample_bundle.json — ImagingStudy gains urn:oid identifier
 - pyproject.toml — jsonschema dev dep
 - .pre-commit-config.yaml — corpus-schema-current hook
 - .claude/commands/session-end.md — corpus schema in doc-sync step
-- CHANGELOG.md — Session 3 sections (Gold + DICOM + as-of-date)
+- CHANGELOG.md — Session 3 sections (Gold · DICOM · as-of-date · docs)
 
 ## ADRs (running list)
 - ADR-008 dict parsing · ADR-009 local Silver · ADR-010 PHI-safe logging ·
