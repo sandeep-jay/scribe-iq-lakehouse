@@ -14,11 +14,15 @@ Every notebook must have these cells in order:
   Cell 8: Code — log to silver.ingest_log
 
 ## Import pattern
+Notebooks consume `core` as a wheel installed into the Fabric Environment
+(see fabric/environments/lakehouse_env.yml and ADR-018). Notebooks never reach
+into source — they import from `core.*` the same way any installed package is used.
+
 ```python
 import os
 os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
-from local.platform.factory import get_platform
-from local.transforms.{module} import {transform_function}
+from core.platform.factory import get_platform
+from core.transforms.{module} import {transform_function}
 platform = get_platform()
 ```
 

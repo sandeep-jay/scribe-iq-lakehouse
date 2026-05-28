@@ -40,16 +40,18 @@ orchestration = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["local*", "orchestration*"]
+# `core/` is the platform-agnostic kernel; per-platform domains land as sibling
+# packages in a follow-up commit. See ADR-002 for the abstraction model.
+include = ["core*"]
 
 [tool.dagster]
-# `dagster dev` loads the medallion asset graph from this module.
-module_name = "orchestration.definitions"
+# `dagster dev` loads the medallion asset graph from this module (ADR-015/016).
+module_name = "core.orchestration.dagster.definitions"
 
 [tool.pytest.ini_options]
-# Make `local` importable without an editable install, and keep tests fast/quiet.
+# Make `core` importable without an editable install.
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["core/tests"]
 addopts = "-ra -q"
 
 [tool.ruff]
@@ -66,7 +68,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests don't need module/function docstrings.
-"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+"core/tests/*" = ["D100", "D101", "D102", "D103", "D104"]
 
 [tool.black]
 line-length = 100
