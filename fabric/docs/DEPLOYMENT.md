@@ -1,15 +1,17 @@
 # Fabric Deployment
 
-How the Fabric tier is deployed and how the runtime gets `core`.
+Operator runbook for standing up the Fabric tier from scratch and keeping it
+synced with `main`. Captures the exact UI paths, the gotchas, and the env-var
+contract that `core` + the CI workflow rely on.
 
-## Overview
+## Architecture
 
 The Fabric tier is two halves moving in lockstep:
 
 1. **Code (notebooks)** — synced from `fabric/notebooks/` into the Fabric workspace via **Fabric Git Integration** (workspace ↔ git folder).
 2. **Library (core wheel)** — built from `core/` on every push, uploaded into a **Fabric Environment** that the workspace's notebooks attach to.
 
-Notebooks `import core.*`; the `core` package comes from the Environment, not from the git-synced files. This is the same library-vs-deployment split documented in [ADR-018](../../docs/adr/018-ci-cd-monorepo.md).
+Notebooks `import core.*`; the `core` package comes from the Environment, not from the git-synced files. This is the library-vs-deployment split documented in [ADR-018](../../docs/adr/018-ci-cd-monorepo.md).
 
 ```
 ┌──────────────────────────────┐
@@ -36,21 +38,149 @@ Notebooks `import core.*`; the `core` package comes from the Environment, not fr
    └─────────────────────────┘
 ```
 
-## Fabric Git Integration
+---
 
-Configure the workspace to sync from `/fabric/notebooks/` on `main`:
+## One-time setup — step by step
 
-1. Workspace settings → Git integration → Connect.
-2. Repository: `sandeep-jay/scribe-iq-lakehouse`
+Execute in order. Each step has a "you'll know it worked when" verification line.
+
+### 1. Workspace + Lakehouse
+
+1. **+ New workspace** → name `scribe_iq_lakehouse_fabric` (or your preference) → region **Central US** (or your nearest) → assign to a Fabric trial / capacity → **Apply**.
+2. From the workspace landing page → **+ New item** → **Lakehouse** → name `scribe_iq_lakehouse_fabric`. **Schema-enabled** option ON (default for new lakehouses; required by the storage layout `Tables/<layer>/<table>` used in [`fabric/platform.py`](../platform.py)'s `storage_path`).
+
+✅ **Verify:** lakehouse opens to an empty `Tables/` and `Files/` view.
+
+### 2. Fabric Environment
+
+The Environment is the Python runtime that every notebook attaches to. It holds Spark version, public PyPI deps, and the `core` wheel.
+
+1. Workspace → **+ New item** → **Environment** → name **`scribe-iq-lakehouse-env`** (must match [`fabric/environments/lakehouse_env.yml`](../environments/lakehouse_env.yml) so the CI config lines up).
+2. Top toolbar → **Runtime** → **1.3 (Spark 3.5, Delta 3.2)**.
+3. **External repositories** in the Environment's inner left nav (click the **≡** hamburger if you only see a single content pane). Toolbar → **+ Add library** → for each of these, set Source = PyPI and add one at a time (the toolbar's "+ Add library" button stays clickable between adds — it doesn't disappear):
+
+   | Library | Min version |
+   |---|---|
+   | `pyarrow` | `15.0` |
+   | `pydicom` | `2.4` |
+   | `python-dateutil` | `2.9` |
+   | `boto3` | `1.34` *(anonymous S3 client for the public Synthea Coherent bucket — used by `01_bronze_ingest`)* |
+
+   *Note: `pyarrow` and `python-dateutil` often already ship in the runtime — check **Built-in libraries** first; the explicit pin is harmless either way.*
+
+4. **Publish** (top right) — Fabric rebuilds a Spark image (~2–5 min). Wait for green.
+5. Open the lakehouse → top bar → **Environment** dropdown → select `scribe-iq-lakehouse-env`. This is how notebooks pick up the runtime.
+
+✅ **Verify:** Environment page shows "Published" with the 4 packages in External repositories. Lakehouse top bar shows the environment attached.
+
+### 3. Capture IDs into `.env`
+
+Every Fabric identifier lives in env vars — never hardcoded in committed files. Template + capture instructions are in [`.env.example`](../../.env.example) at the repo root.
+
+```bash
+cp .env.example .env          # gitignored
+```
+
+Fill in `.env` with these three GUIDs from the Fabric URL bar:
+
+| Variable | URL path |
+|---|---|
+| `FABRIC_WORKSPACE_ID` | `/groups/<GUID>` (when on workspace landing) |
+| `FABRIC_LAKEHOUSE_ID` | `/lakehouses/<GUID>` (when inside the lakehouse) |
+| `FABRIC_ENVIRONMENT_ID` | `/sparkenvironments/<GUID>` (when inside the environment) |
+
+Then source it for the current shell:
+
+```bash
+set -a; source .env; set +a
+echo $FABRIC_WORKSPACE_ID    # smoke test
+```
+
+✅ **Verify:** `echo` prints a GUID, not the literal placeholder.
+
+### 4. Build + upload the core wheel — Path A (manual UI, no Azure)
+
+The simplest path for development. No Service Principal needed — that's only for CI automation.
+
+```bash
+.venv/bin/python -m pip install build
+.venv/bin/python -m build --wheel --outdir dist/
+```
+
+Produces `dist/scribe_iq_lakehouse-0.1.0-py3-none-any.whl` (~100 KB).
+
+Then in Fabric: Environment → **Custom libraries** (left rail, below External repositories) → **+ Upload** → pick the wheel → Save → **Publish** (top right). Wait for green again (~2–5 min).
+
+✅ **Verify:** Custom libraries shows `scribe_iq_lakehouse-0.1.0-py3-none-any.whl` with status Saved; publish history's most recent entry is Succeeded.
+
+### 5. Build + upload — Path B (REST automation, needs Service Principal)
+
+Run this once locally to validate the round-trip before relying on CI. Skippable if Path A works and you're not pushing for CI yet.
+
+#### 5a. Register the Service Principal
+
+1. **Azure Portal** → **Entra ID** → **App registrations** → **+ New registration** → name `fabric-scribe-iq-deploy` → leave redirect URI blank → **Register**.
+2. App **Overview** → copy:
+   - **Application (client) ID** → goes in `.env` as `FABRIC_CLIENT_ID`
+   - **Directory (tenant) ID** → `.env` as `FABRIC_TENANT_ID`
+3. Left rail → **Certificates & secrets** → **+ New client secret** → 24 months → **Add**.
+4. Copy the **Value** column **immediately** (only shown once) → `.env` as `FABRIC_CLIENT_SECRET`.
+
+#### 5b. Grant Contributor on the workspace
+
+> **Gotcha:** "Manage access" is **NOT in Workspace settings**. It's on the workspace landing page itself.
+
+1. Close Workspace settings if open. Go to the workspace landing page.
+2. Top-right toolbar (near **Share**) → **people icon** labeled **Manage access**. *(Alternative: workspace name → **⋯** menu → Manage access.)*
+3. **+ Add people or groups** → search for `fabric-scribe-iq-deploy` → role **Contributor** → **Add**.
+
+#### 5c. Run the REST upload
+
+```bash
+set -a; source .env; set +a
+.venv/bin/python -m pip install -e ".[fabric]"
+.venv/bin/python fabric/deploy/upload_wheel.py \
+  --wheel dist/scribe_iq_lakehouse-0.1.0-py3-none-any.whl \
+  --environment-id "$FABRIC_ENVIRONMENT_ID"
+```
+
+Expected output:
+```
+[upload_wheel] acquiring Fabric token (tenant=xxxxxxxx…)
+[upload_wheel] uploading scribe_iq_lakehouse-0.1.0-py3-none-any.whl → env <env-id>
+[upload_wheel] publishing environment
+[upload_wheel] waiting for publish to complete
+[upload_wheel] publish succeeded
+```
+
+✅ **Verify:** same as Path A — Custom libraries shows the wheel, publish state Succeeded.
+
+### 6. Fabric Git Integration
+
+Wires the workspace ↔ `/fabric/notebooks/` so notebook commits flow both ways.
+
+1. Workspace settings → **Git integration** → **Connect**.
+2. Repository: `<your-github-org>/scribe-iq-lakehouse`
 3. Branch: `main`
-4. Git folder: `/fabric/notebooks`
-5. Sync direction: Bidirectional.
+4. Git folder: `/fabric/notebooks` *(not the repo root — only notebooks live in workspace; `core/` arrives via Environment)*
+5. Sync direction: **Bidirectional**.
 
-The workspace then sees only notebooks. `core/` is invisible to the workspace and arrives via the Environment instead.
+✅ **Verify:** workspace shows a Git status badge. First sync is empty until Phase 4 lands notebooks.
 
-## Service Principal (one-time setup)
+---
 
-A Service Principal is required for CI to talk to the Fabric REST API. Stored as GitHub Environment `fabric-prod`:
+## CI flow
+
+[`.github/workflows/fabric-deploy.yml`](../../.github/workflows/fabric-deploy.yml) runs on every push to `main` touching `core/**` or `fabric/**`:
+
+1. Checkout repo, install `[local,dev,orchestration,fabric]` + `build` + `fabric-cicd`.
+2. `pytest fabric/tests/` — offline contract tests (5 pass, 1 fabric-marked test skipped without `FABRIC_TENANT_ID`).
+3. `python -m build --wheel --outdir dist/`.
+4. `python fabric/deploy/upload_wheel.py --wheel dist/scribe_iq_lakehouse*.whl --environment-id $FABRIC_ENVIRONMENT_ID` *(same script as Path B above)*.
+5. `fabric-cicd deploy --config fabric/deploy/fabric_cicd_config.yml` — syncs notebooks.
+6. `fabric-cicd smoke-run --config fabric/deploy/fabric_cicd_config.yml` — runs notebook 05 end-to-end.
+
+**GitHub secrets** — set on the `fabric-prod` GitHub Environment (Repo Settings → Environments → New environment `fabric-prod`):
 
 - `FABRIC_TENANT_ID`
 - `FABRIC_CLIENT_ID`
@@ -59,29 +189,46 @@ A Service Principal is required for CI to talk to the Fabric REST API. Stored as
 - `FABRIC_LAKEHOUSE_ID`
 - `FABRIC_ENVIRONMENT_ID`
 
-Grant the Service Principal **Contributor** on the workspace.
+Recommend restricting `fabric-prod` deployments to the `main` branch.
 
-## CI flow
+---
 
-`.github/workflows/fabric-deploy.yml` runs on every push to `main` touching `core/**` or `fabric/**`:
+## Local dev (no Fabric account)
 
-1. Checkout repo, install deps.
-2. Run `pytest fabric/tests/`.
-3. Build `core/` wheel.
-4. Run `python fabric/deploy/upload_wheel.py --wheel core/dist/*.whl --environment-id $FABRIC_ENVIRONMENT_ID`.
-5. Run `fabric-cicd --config fabric/deploy/fabric_cicd_config.yml`.
-6. Trigger a smoke run of `fabric/notebooks/05_silver_soap_notes.ipynb`.
-
-## Local dev
-
-For local notebook development without deploying:
+For notebook development without deploying:
 
 ```bash
-LAKEHOUSE_PLATFORM=local_lite python -m core.surfaces.cli.pipeline --with-gold
+LAKEHOUSE_PLATFORM=local_lite .venv/bin/python -m core.surfaces.cli.pipeline --with-gold
 ```
 
-The `LAKEHOUSE_PLATFORM` env var dispatches the factory to `LocalLitePlatform` (Polars + DuckDB + delta-rs) — same transforms, no Fabric account needed. Notebooks can be edited in VS Code with the Jupyter extension and pushed via Git Integration when ready.
+The `LAKEHOUSE_PLATFORM` env var dispatches the factory to `LocalLitePlatform` (Polars + delta-rs) — same transforms, no Fabric account needed. Notebooks can be edited in VS Code with the Jupyter extension and pushed via Git Integration when ready.
 
-## Status
+---
 
-This document is a stub created during the multi-platform reorg (Session 5 prep). Real workspace IDs, Service Principal setup, and a verified end-to-end run land in Session 5 alongside the FabricPlatform implementation.
+## S3 ingest (no AWS account)
+
+Notebook `01_bronze_ingest` uses `boto3` in anonymous mode (`Config(signature_version=UNSIGNED)`) to pull from the public `s3://synthea-open-data/coherent/` bucket directly into `Files/bronze/fhir/cohort=*/`. No AWS account, no IAM user, no S3 shortcut required. See [docs/roadmap/fabric-execution-plan.md](../../docs/roadmap/fabric-execution-plan.md) Phase 3 decision.
+
+---
+
+## Gotchas (things to save the next person 30 min)
+
+- **Lakehouse must be schema-enabled.** The default for new lakehouses since 2024, but verify — the storage path layout in `fabric/platform.py` depends on it (`Tables/<layer>/<table>`).
+- **External repositories ≠ Built-in libraries.** Built-in is read-only (shows what ships with the runtime). PyPI deps go in External repositories.
+- **"+ Add library" is the only path** — you add libraries one at a time, but the button stays clickable between adds. The toolbar also has **Import YML** if you want bulk, but the schema is conda-style (not the same as our `lakehouse_env.yml`).
+- **"Manage access" lives on the workspace landing page**, not in Workspace settings. Trips up everyone the first time.
+- **Service Principal client secret is shown only once** — at creation, in the "Value" column. Copy it immediately or you'll have to delete + recreate.
+- **Environment publish takes 2–5 min** for each change (new library OR new wheel). Plan for it; don't refresh anxiously.
+- **The wheel includes both `core/` and `fabric/` packages.** That's correct — notebooks need `fabric.platform.FabricPlatform` to be importable too; the factory dispatches there for `LAKEHOUSE_PLATFORM=fabric`.
+
+---
+
+## Provisioned reference (current deployment)
+
+| Resource | Name | Region |
+|---|---|---|
+| Workspace | `scribe_iq_lakehouse_fabric` | Central US |
+| Lakehouse | `scribe_iq_lakehouse_fabric` | Central US |
+| Environment | `scribe-iq-lakehouse-env` | Runtime 1.3, Spark 3.5, Delta 3.2 |
+
+GUIDs live in your local `.env` and the `fabric-prod` GitHub Environment secrets — never in this doc.
