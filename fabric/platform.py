@@ -59,21 +59,35 @@ class FabricPlatform:
     # ------------------------------------------------------- lazy environment
 
     def ensure_env(self) -> tuple[str, str]:
-        """Resolve workspace + lakehouse names from ``mssparkutils`` on first call."""
+        """Resolve workspace + lakehouse from Spark conf on first call.
+
+        Fabric injects the attached lakehouse identity into the Spark session
+        as ``trident.*`` config keys. These are the documented, stable Fabric
+        API for runtime identity — unlike the Synapse-era
+        ``mssparkutils.env.getWorkspaceId()`` which doesn't exist on Fabric.
+        """
         if self._workspace_id is None or self._lakehouse_name is None:
-            try:
-                import notebookutils.mssparkutils as msu
-            except ImportError as exc:
+            spark = self.get_spark_session()
+            if spark is None:
                 msg = (
                     "FabricPlatform needs workspace_id + lakehouse_name; pass them "
-                    "explicitly or run inside a Fabric notebook where "
-                    "notebookutils.mssparkutils is available."
+                    "explicitly or run inside a Fabric notebook with an attached "
+                    "Spark session."
+                )
+                raise RuntimeError(msg)
+            try:
+                if self._workspace_id is None:
+                    self._workspace_id = spark.conf.get("trident.workspace.id")
+                if self._lakehouse_name is None:
+                    self._lakehouse_name = spark.conf.get("trident.lakehouse.name")
+            except Exception as exc:  # noqa: BLE001 — Spark raises NoSuchElementException
+                msg = (
+                    "Couldn't read Fabric identity from Spark conf "
+                    "(trident.workspace.id / trident.lakehouse.name). Either no "
+                    "lakehouse is attached to this notebook (top bar → Add lakehouse), "
+                    "or you're not running inside a Fabric notebook."
                 )
                 raise RuntimeError(msg) from exc
-            if self._workspace_id is None:
-                self._workspace_id = msu.env.getWorkspaceId()
-            if self._lakehouse_name is None:
-                self._lakehouse_name = msu.lakehouse.get()["displayName"]
         return self._workspace_id, self._lakehouse_name
 
     def get_spark_session(self) -> SparkSession | None:
