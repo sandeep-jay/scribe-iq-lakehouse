@@ -19,12 +19,11 @@
 # **Outputs.** None (no Delta writes, no ingest_log row). Just a printed checklist + a tiny `boto3` listing as proof the public S3 bucket is reachable.
 #
 # **Dependencies (Environment `scribe-iq-lakehouse-env`).**
-# - `scribe-iq-lakehouse-core` wheel (uploaded via Custom libraries) — provides `core.*` + `fabric.*`
-# - `pyarrow>=15.0`, `pydicom>=2.4`, `python-dateutil>=2.9` (from External repositories)
+# - `scribe-iq-lakehouse-core` wheel (uploaded via Custom libraries) — provides `fabric.*`
 # - `boto3>=1.34` (anonymous S3 client for the Synthea Coherent public bucket)
 #
 # **What it checks (4 gates).**
-# 1. Wheel installed: `from core.platform.factory import get_platform` + `from fabric.platform import FabricPlatform` both succeed.
+# 1. Wheel installed: `from fabric.platform import FabricPlatform` succeeds.
 # 2. Spark + notebookutils healthy: active SparkSession + workspace ID readable.
 # 3. FabricPlatform: `storage_path(...)` returns a valid OneLake `abfss://` URI; `Files/bronze/` is reachable via `mssparkutils.fs.ls`.
 # 4. S3 anonymous access: `boto3.client('s3', config=Config(signature_version=UNSIGNED))` can list `synthea-open-data/coherent/`.
@@ -45,10 +44,10 @@
 # This notebook validates the deployment contract documented across these ADRs and runbooks:
 #
 # - **[ADR-001](../../docs/adr/001-fabric-first.md)** — Fabric-first development; the runtime this notebook depends on.
-# - **[ADR-002](../../docs/adr/002-platform-abstraction.md)** — `LakehousePlatform` interface; `FabricPlatform` is one implementation, dispatched by the factory on `LAKEHOUSE_PLATFORM=fabric`.
-# - **[ADR-017](../../docs/adr/017-multi-platform-repo-layout.md)** — `core/` ships as a wheel; notebooks `import core.*` from the wheel, never reach into source.
+# - **[ADR-017](../../docs/adr/017-multi-platform-repo-layout.md)** — `core/` ships as a wheel; the wheel includes `fabric.*` which notebooks import.
 # - **[ADR-018](../../docs/adr/018-ci-cd-monorepo.md)** — the wheel arrives via `fabric/deploy/upload_wheel.py` (manual via UI today; CI later).
-# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — `FabricPlatform._write_delta` mirrors LocalLite's target-dedup guard; exercised in notebooks 02+, this notebook only verifies the class loads.
+# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — `FabricPlatform._write_delta_spark` runs a pre-merge target-side dedup guard; exercised in notebooks 02+, this notebook only verifies the class loads.
+# - **[ADR-022](../../docs/adr/022-platform-independent-implementations.md)** — Fabric is an independent end-to-end Spark-native implementation; no shared platform factory.
 #
 # **Operator runbook:** [fabric/docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md). If any cell below fails, that doc lists the setup step that was likely missed.
 #
@@ -63,19 +62,12 @@
 
 # CELL ********************
 
-import os
-
-os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
-
-from core.platform.factory import get_platform
 from fabric.platform import FabricPlatform
 
-platform = get_platform()
-assert isinstance(platform, FabricPlatform), (
-    f"Expected FabricPlatform, got {type(platform).__name__} — "
-    "check LAKEHOUSE_PLATFORM env var and core/platform/factory.py mapping."
-)
-print(f"✓ wheel installed; factory returned {type(platform).__name__}")
+# ADR-022: Fabric is an independent end-to-end implementation — instantiate
+# the platform class directly, no LAKEHOUSE_PLATFORM env var, no factory.
+platform = FabricPlatform()
+print(f"✓ wheel installed; FabricPlatform constructed ({platform.name})")
 
 # METADATA ********************
 
@@ -211,9 +203,9 @@ print(f"\nAll {len(results)} gates passed — Fabric tier ready for notebooks 01
 
 # Setup notebooks don't write to silver.ingest_log (no ingest happened).
 # The presence of a green run + the screenshot of the display() cell above
-# is the audit trail. Subsequent notebooks (01–10) DO write ingest_log rows
-# via core.validation, per the 8-cell template.
-print("00_setup complete — next: 01_bronze_ingest.ipynb")
+# is the audit trail. Subsequent notebooks (02–10) DO write ingest_log rows
+# via fabric.validation in notebook 08, per the 8-cell template.
+print("00_setup complete — next: 01_bronze_ingest")
 
 # METADATA ********************
 

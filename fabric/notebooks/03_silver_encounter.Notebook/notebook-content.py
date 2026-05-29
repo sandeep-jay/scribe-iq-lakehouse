@@ -10,20 +10,16 @@
 
 # MARKDOWN ********************
 
-# # 03 — Silver: `encounter` (distributed Spark)
+# # 03 — Silver: `encounter` (pure Spark)
 #
-# **Purpose.** Build `silver.encounter` — one row per FHIR `Encounter`. This is
-# the grain of the Gold layer's `encounter_summary`; every downstream Silver
-# row joins back to `encounter_id`.
+# **Purpose.** Build `silver.encounter` from Bronze bundles using
+# `fabric.transforms.silver_encounter`. Each Encounter resource projects to one
+# row keyed by `encounter_id`, with patient/provider references stripped of
+# their `urn:uuid:` / `Patient/` prefixes.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json`.
+# **Output.** `Tables/silver/encounter` — MERGE on `encounter_id`, CDC enabled.
 #
-# **Output.** Delta table `Tables/silver/encounter` (MERGE on `encounter_id`,
-# CDC enabled).
-#
-# **Expected scale.** ~143,946 rows at full Coherent (~113 encounters/patient).
-#
-# Screenshot the Cell 11 output as `03_silver_encounter.png`.
+# **Expected scale.** ~50k–80k rows at full Coherent.
 
 # METADATA ********************
 
@@ -34,12 +30,12 @@
 
 # MARKDOWN ********************
 
-# ## Architecture context
+# ## Architecture
 #
-# Same distributed pattern as `02_silver_patient`: Spark.read.text →
-# applyInPandas(parser UDF) → write_silver_spark with MERGE. Encounter is the
-# temporal anchor for ADR-014's as-of-date problem list — `period_start` must
-# parse correctly downstream.
+# - **[ADR-022](../../docs/adr/022-platform-independent-implementations.md)** —
+#   Fabric-native transform; no `core/` import.
+# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — Pre-merge
+#   target dedup guard.
 
 # METADATA ********************
 
@@ -50,26 +46,18 @@
 
 # CELL ********************
 
-import os
 from datetime import UTC, datetime
 
-os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
-
-from core.platform.factory import get_platform
-from core.transforms.registry import SILVER_TABLES
-from fabric.spark_helpers import (
-    make_partition_parser,
-    pa_to_spark_schema,
-    read_fhir_bundles_distributed,
-)
+from fabric.platform import FabricPlatform
+from fabric.transforms.registry import REGISTRY
 
 TABLE = "encounter"
-MIN_ROWS = 10
+MIN_ROWS = 100
 
-platform = get_platform()
+platform = FabricPlatform()
 spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
-spec = SILVER_TABLES[TABLE]
+spec = REGISTRY[TABLE]
 print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # METADATA ********************
@@ -81,7 +69,8 @@ print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # MARKDOWN ********************
 
-# ## Step 1 — Read FHIR bundles as a Spark DataFrame
+# ## Step 1 — Read Bronze bundles distributed
+# Same pattern as 02 — `path` + `value` Spark DataFrame, one row per bundle file.
 
 # METADATA ********************
 
@@ -92,8 +81,7 @@ print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # CELL ********************
 
-fhir_root = platform.storage_path("bronze", "fhir")
-bundles_df = read_fhir_bundles_distributed(spark, fhir_root)
+bundles_df = platform.read_bronze_bundles_spark()
 print(f"Bundles read: {bundles_df.count():,}  ·  partitions: {bundles_df.rdd.getNumPartitions()}")
 
 # METADATA ********************
@@ -105,7 +93,7 @@ print(f"Bundles read: {bundles_df.count():,}  ·  partitions: {bundles_df.rdd.ge
 
 # MARKDOWN ********************
 
-# ## Step 2 — Distributed parse → Silver DataFrame
+# ## Step 2 — Build Silver + MERGE on `encounter_id`
 
 # METADATA ********************
 
@@ -116,36 +104,9 @@ print(f"Bundles read: {bundles_df.count():,}  ·  partitions: {bundles_df.rdd.ge
 
 # CELL ********************
 
-from pyspark.sql import functions as F  # noqa: N812
-
-parse_udf = make_partition_parser(TABLE, spec.build, ingest_ts)
-spark_schema = pa_to_spark_schema(spec.schema)
-silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
-    parse_udf, schema=spark_schema
-)
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# MARKDOWN ********************
-
-# ## Step 3 — Spark-native MERGE
-
-# METADATA ********************
-
-# META {
-# META   "language": "markdown",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
+silver_df = spec.build(bundles_df, ingest_ts)
 platform.write_silver_spark(TABLE, silver_df, mode="merge")
-print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
+print(f"Wrote silver.{TABLE}")
 
 # METADATA ********************
 
@@ -157,8 +118,7 @@ print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 # MARKDOWN ********************
 
 # ## Validation
-#
-# Row count + encounters-per-patient ratio + sample.
+# Readback, row count assertion, sample display.
 
 # METADATA ********************
 
@@ -171,25 +131,10 @@ print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 
 written = platform.read_silver_spark(TABLE)
 count = written.count()
-distinct_patients = written.select("patient_id").distinct().count()
 print(f"silver.{TABLE} row count: {count:,}")
-print(f"distinct patients with encounters: {distinct_patients:,}")
-print(f"avg encounters / patient: {count / max(distinct_patients, 1):.1f}")
 assert count >= MIN_ROWS, f"Row count {count} below minimum {MIN_ROWS}"
-display(written.orderBy(F.col("period_start").desc()).limit(5))
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
+display(written.limit(5))
 platform.log_metric(TABLE, "row_count", count)
-platform.log_metric(TABLE, "distinct_patients", distinct_patients)
-print("03_silver_encounter complete — next: 04_silver_clinical")
 
 # METADATA ********************
 

@@ -10,24 +10,19 @@
 
 # MARKDOWN ********************
 
-# # 05 — Silver: `soap_note` (demo centerpiece, distributed Spark)
+# # 05 — Silver: `soap_note` (pure Spark, demo centerpiece)
 #
-# **Purpose.** Distributed extraction + Base64 decode of Synthea SOAP notes
-# from FHIR `DocumentReference` resources. **Demo centerpiece** — the
-# validation cell must show a *human-readable* decoded SOAP note (not a
-# Base64 blob).
+# **Purpose.** Build `silver.soap_note` from `DocumentReference` resources.
+# Coherent embeds the clinical note as Base64 in `content[0].attachment.data`;
+# the Spark transform decodes it with `unbase64 → decode("UTF-8")` and runs
+# case-insensitive regex to flag the S / O / A / P sections.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json`. Synthea embeds note text
-# Base64-encoded inside `DocumentReference.content[].attachment.data`
-# (inline; ADR-005).
+# **Output.** `Tables/silver/soap_note` — MERGE on `note_id`, CDC enabled.
 #
-# **Output.** Delta table `Tables/silver/soap_note` (MERGE on `note_id`,
-# CDC enabled). Decoded `note_text` + S/O/A/P section flags + length metrics.
-#
-# **Expected scale.** ~143,946 rows at full Coherent.
-#
-# **Screenshot Cell 11 (decoded HTML) as `05_silver_soap_demo.png` — highest
-# priority capture in the project.**
+# **Demo rule (.claude/rules/notebooks.md).** This notebook MUST show a
+# decoded SOAP note in the readback cell — that's the "reviewer-readable
+# clinical text" that proves the medallion is doing what it claims.
+# Screenshot the decoded `note_text` column as `05_silver_soap_notes.png`.
 
 # METADATA ********************
 
@@ -38,18 +33,12 @@
 
 # MARKDOWN ********************
 
-# ## Architecture context
+# ## Architecture
 #
-# - **[ADR-005](../../docs/adr/005-fhir-binary-decode.md)** — Base64 decode
-#   from inline attachments.
-# - **[ADR-020](../../docs/adr/020-fabric-distributed-parsing.md)** —
-#   `applyInPandas` distributes parse + decode across executors.
-# - **Section detection is heuristic** — Coherent uses Markdown headers
-#   (`# Chief Complaint`, `# Assessment and Plan`); rarely an Objective
-#   section, so `has_objective` is frequently `False`. Honest, not a bug.
-# - **PHI policy ([ADR-010](../../docs/adr/010-phi-safe-logging.md))** — note
-#   text shown because Synthea is synthetic. Real PHI requires
-#   `core.redaction.redact()`.
+# - **[ADR-022](../../docs/adr/022-platform-independent-implementations.md)** —
+#   Independent Spark-native impl.
+# - **[ADR-005](../../docs/adr/005-soap-note-base64-decoding.md)** — Base64
+#   decoding contract for Coherent DocumentReference attachments.
 
 # METADATA ********************
 
@@ -60,27 +49,18 @@
 
 # CELL ********************
 
-import os
 from datetime import UTC, datetime
 
-os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
-
-from core.platform.factory import get_platform
-from core.transforms.registry import SILVER_TABLES
-from fabric.spark_helpers import (
-    make_partition_parser,
-    pa_to_spark_schema,
-    read_fhir_bundles_distributed,
-)
+from fabric.platform import FabricPlatform
+from fabric.transforms.registry import REGISTRY
 
 TABLE = "soap_note"
-MIN_ROWS = 1
-MIN_NOTE_CHARS = 100
+MIN_ROWS = 50
 
-platform = get_platform()
+platform = FabricPlatform()
 spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
-spec = SILVER_TABLES[TABLE]
+spec = REGISTRY[TABLE]
 print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # METADATA ********************
@@ -92,7 +72,7 @@ print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # MARKDOWN ********************
 
-# ## Step 1 — Read FHIR bundles distributed
+# ## Step 1 — Read Bronze bundles
 
 # METADATA ********************
 
@@ -103,8 +83,7 @@ print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # CELL ********************
 
-fhir_root = platform.storage_path("bronze", "fhir")
-bundles_df = read_fhir_bundles_distributed(spark, fhir_root)
+bundles_df = platform.read_bronze_bundles_spark()
 print(f"Bundles read: {bundles_df.count():,}")
 
 # METADATA ********************
@@ -116,7 +95,7 @@ print(f"Bundles read: {bundles_df.count():,}")
 
 # MARKDOWN ********************
 
-# ## Step 2 — Distributed parse + Base64 decode + section detection
+# ## Step 2 — Build Silver (decode + section flags) + MERGE
 
 # METADATA ********************
 
@@ -127,25 +106,9 @@ print(f"Bundles read: {bundles_df.count():,}")
 
 # CELL ********************
 
-from pyspark.sql import functions as F  # noqa: N812
-
-parse_udf = make_partition_parser(TABLE, spec.build, ingest_ts)
-spark_schema = pa_to_spark_schema(spec.schema)
-silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
-    parse_udf, schema=spark_schema
-)
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
+silver_df = spec.build(bundles_df, ingest_ts)
 platform.write_silver_spark(TABLE, silver_df, mode="merge")
-print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
+print(f"Wrote silver.{TABLE}")
 
 # METADATA ********************
 
@@ -156,9 +119,10 @@ print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 
 # MARKDOWN ********************
 
-# ## Validation — corpus shape
+# ## Validation — show a fully decoded SOAP note
 #
-# Row count + section-coverage stats + length distribution + sample rows.
+# Required by `.claude/rules/notebooks.md`: the reviewer must see readable
+# clinical text in the notebook output.
 
 # METADATA ********************
 
@@ -171,80 +135,32 @@ print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 
 written = platform.read_silver_spark(TABLE)
 count = written.count()
+print(f"silver.{TABLE} row count: {count:,}")
 assert count >= MIN_ROWS, f"Row count {count} below minimum {MIN_ROWS}"
 
-coverage = written.agg(
-    F.count("*").alias("rows"),
-    F.sum(F.col("has_subjective").cast("int")).alias("subjective"),
-    F.sum(F.col("has_objective").cast("int")).alias("objective"),
-    F.sum(F.col("has_assessment").cast("int")).alias("assessment"),
-    F.sum(F.col("has_plan").cast("int")).alias("plan"),
-    F.round(F.avg("char_count"), 0).alias("avg_chars"),
-    F.round(F.avg("word_count"), 0).alias("avg_words"),
-)
-print(f"silver.{TABLE} row count: {count:,}")
-display(coverage)
+# Sample row metadata + a fully decoded note (truncated to keep the cell readable).
 display(
     written.select(
-        "note_id", "patient_id", "encounter_id", "char_count",
-        "has_subjective", "has_assessment", "has_plan",
+        "note_id",
+        "patient_id",
+        "encounter_id",
+        "note_date",
+        "char_count",
+        "has_subjective",
+        "has_assessment",
+        "has_plan",
     ).limit(5)
 )
 
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-# ============================================================================
-# DEMO CENTERPIECE — decoded SOAP note rendered as readable HTML.
-# Capture THIS cell's output as fabric/docs/screenshots/05_silver_soap_demo.png
-# ============================================================================
-sample = (
-    written.filter(F.col("char_count") >= MIN_NOTE_CHARS)
-    .filter(F.col("has_assessment") & F.col("has_plan"))
-    .orderBy(F.desc("char_count"))
-    .select("note_id", "patient_id", "encounter_id", "char_count", "note_text")
-    .limit(1)
-    .collect()
-)
-if not sample:
-    sample = (
-        written.select("note_id", "patient_id", "encounter_id", "char_count", "note_text")
-        .limit(1)
-        .collect()
-    )
-
-row = sample[0]
-soap = (row["note_text"] or "").replace("<", "&lt;").replace(">", "&gt;")
-displayHTML(
-    f"<div style='font-family:-apple-system,sans-serif;max-width:900px;"
-    f"padding:16px;line-height:1.55;'>"
-    f"<h3>Sample SOAP note</h3>"
-    f"<p><b>note_id:</b> <code>{row['note_id']}</code><br>"
-    f"<b>patient_id:</b> <code>{row['patient_id']}</code><br>"
-    f"<b>encounter_id:</b> <code>{row['encounter_id']}</code>"
-    f"  ·  <b>chars:</b> {row['char_count']:,}</p><hr>"
-    f"<pre style='white-space:pre-wrap;font-size:13px;background:#f6f8fa;"
-    f"padding:14px;border-radius:6px;'>{soap}</pre></div>"
-)
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
+example = written.select("note_id", "note_text").limit(1).collect()
+if example:
+    text = example[0]["note_text"] or ""
+    print(f"\n--- DECODED SOAP NOTE (note_id={example[0]['note_id']}) ---")
+    print(text[:2000])
+    if len(text) > 2000:
+        print(f"... [truncated, total {len(text):,} chars]")
 
 platform.log_metric(TABLE, "row_count", count)
-print("05_silver_soap_notes complete — decoded-note screenshot is the priority capture.")
-print("Next: 06_silver_imaging_dicom")
 
 # METADATA ********************
 
