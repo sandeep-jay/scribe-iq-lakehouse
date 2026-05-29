@@ -163,22 +163,74 @@ class FabricPlatform(LakehousePlatform):
     # ----------------------------------------------------------- silver/gold
 
     def write_silver(self, table: str, data: pa.Table, mode: str = "merge") -> None:
-        """Upsert/append/overwrite a Silver Delta table on OneLake."""
-        path = self.storage_path("silver", table)
-        self._write_delta(path, data, mode, table)
+        """Upsert/append/overwrite a Silver Delta table from a ``pa.Table``.
 
-    def read_silver(self, table: str) -> pa.Table:
-        """Read a Silver Delta table from OneLake as a PyArrow table."""
+        Convenience wrapper: converts to a Spark DataFrame via pandas, then
+        defers to :meth:`write_silver_spark`. Used by LocalLite-style callers
+        (CLI pipeline) that already have a ``pa.Table``. For native Fabric
+        notebooks that build Spark DataFrames directly, prefer
+        :meth:`write_silver_spark` — skips the pa↔pandas round-trip and
+        scales beyond driver memory.
+        """
         spark = self.get_spark_session()
         if spark is None:
-            raise RuntimeError("read_silver requires an active SparkSession")
-        return pa.Table.from_pandas(
-            spark.read.format("delta").load(self.storage_path("silver", table)).toPandas()
-        )
+            raise RuntimeError("write_silver requires an active SparkSession")
+        df = spark.createDataFrame(data.to_pandas())
+        self.write_silver_spark(table, df, mode=mode)
+
+    def write_silver_spark(self, table: str, df: Any, mode: str = "merge") -> None:
+        """Native-Spark write of a Silver Delta table from a Spark DataFrame.
+
+        This is the Fabric-idiomatic write path used by the distributed
+        notebooks (ADR-020). Applies the same ADR-019 target-side dedup guard
+        before MERGE that the pa.Table path does.
+
+        Args:
+            table: Silver table name (registry key).
+            df: Spark DataFrame matching ``SILVER_TABLES[table].schema``.
+            mode: ``"merge"`` (upsert on primary key), ``"append"``, or
+                ``"overwrite"``.
+        """
+        self._write_delta_spark(self.storage_path("silver", table), df, mode, table)
+
+    def read_silver(self, table: str) -> pa.Table:
+        """Read a Silver Delta table as ``pa.Table`` (driver-side; small tables only).
+
+        For large tables or any distributed downstream work, prefer
+        :meth:`read_silver_spark` — keeps data in Spark, avoids the
+        driver-memory bottleneck of ``.toPandas()``.
+        """
+        return pa.Table.from_pandas(self.read_silver_spark(table).toPandas())
+
+    def read_silver_spark(self, table: str) -> Any:
+        """Read a Silver Delta table as a Spark DataFrame (distributed)."""
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError("read_silver_spark requires an active SparkSession")
+        return spark.read.format("delta").load(self.storage_path("silver", table))
 
     def write_gold(self, table: str, data: pa.Table) -> None:
-        """Overwrite a Gold Delta table on OneLake."""
-        self._write_delta(self.storage_path("gold", table), data, "overwrite", table)
+        """Overwrite a Gold Delta table from a ``pa.Table``.
+
+        Convenience wrapper for the pa.Table callers; see
+        :meth:`write_gold_spark` for the Spark-native path.
+        """
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError("write_gold requires an active SparkSession")
+        df = spark.createDataFrame(data.to_pandas())
+        self.write_gold_spark(table, df)
+
+    def write_gold_spark(self, table: str, df: Any) -> None:
+        """Native-Spark overwrite of a Gold Delta table from a Spark DataFrame."""
+        self._write_delta_spark(self.storage_path("gold", table), df, "overwrite", table)
+
+    def read_gold_spark(self, table: str) -> Any:
+        """Read a Gold Delta table as a Spark DataFrame (distributed)."""
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError("read_gold_spark requires an active SparkSession")
+        return spark.read.format("delta").load(self.storage_path("gold", table))
 
     def table_version(self, layer: str, table: str) -> int | None:
         """Return the latest Delta version for ``<layer>.<table>``, or ``None``."""
@@ -210,19 +262,21 @@ class FabricPlatform(LakehousePlatform):
 
     # ----------------------------------------------------------- write helper
 
-    def _write_delta(self, path: str, data: pa.Table, mode: str, table: str) -> None:
-        """Create-or-upsert a Delta table at ``path`` honoring the requested mode.
+    def _write_delta_spark(self, path: str, df: Any, mode: str, table: str) -> None:
+        """Create-or-upsert a Delta table at ``path`` from a Spark DataFrame.
 
-        Mirrors :meth:`LocalLitePlatform._write_delta`, including the ADR-019
-        target-side dedup guard before MERGE.
+        Single internal write path. Both the pa.Table-flavoured wrappers
+        (:meth:`write_silver`, :meth:`write_gold`) and the Spark-native
+        wrappers (:meth:`write_silver_spark`, :meth:`write_gold_spark`)
+        ultimately call here. Mirrors :meth:`LocalLitePlatform._write_delta`,
+        including the ADR-019 target-side dedup guard before MERGE.
         """
         spark = self.get_spark_session()
         if spark is None:
-            raise RuntimeError(f"_write_delta on {path!r} requires an active SparkSession")
+            raise RuntimeError(f"_write_delta_spark on {path!r} requires an active SparkSession")
 
         from delta.tables import DeltaTable as SparkDeltaTable
 
-        df = spark.createDataFrame(data.to_pandas())
         exists = SparkDeltaTable.isDeltaTable(spark, path)
 
         if mode == "merge" and exists:
@@ -263,7 +317,16 @@ class FabricPlatform(LakehousePlatform):
 
         # First write or explicit overwrite/append: create with CDC enabled.
         write_mode = "append" if (mode == "append" and exists) else "overwrite"
-        (df.write.format("delta").mode(write_mode).option(_CDC_PROPERTY, "true").save(path))
+        df.write.format("delta").mode(write_mode).option(_CDC_PROPERTY, "true").save(path)
+
+    # Backward-compat — old internal callers expected _write_delta(pa.Table).
+    def _write_delta(self, path: str, data: pa.Table, mode: str, table: str) -> None:
+        """Legacy pa.Table internal write path; converts then delegates to Spark."""
+        spark = self.get_spark_session()
+        if spark is None:
+            raise RuntimeError(f"_write_delta on {path!r} requires an active SparkSession")
+        df = spark.createDataFrame(data.to_pandas())
+        self._write_delta_spark(path, df, mode, table)
 
     # --------------------------------------------------------- observability
 

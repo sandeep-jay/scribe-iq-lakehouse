@@ -10,19 +10,22 @@
 
 # MARKDOWN ********************
 
-# # 07 — Silver: ecg_metadata + genomic_report
+# # 07 — Silver: `ecg_metadata` + `genomic_report` (distributed Spark)
 #
-# **Purpose.** Build the two specialty-modality Silver tables: `ecg_metadata` and `genomic_report`. Both have honest-limitations baked into the schema — the data isn't clinical-grade and the columns say so.
+# **Purpose.** Build two specialty-modality Silver tables with honest
+# limitations baked into their schemas. Same read-once / parse-per-table
+# distributed pattern as `04_silver_clinical`.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json` — both transforms read `DiagnosticReport` resources, classified by LOINC code / keyword.
+# **Outputs.** Two Delta tables:
+# - `ecg_metadata` (PK `ecg_id`) — metadata only; Coherent ECG is SBML model
+#   output, not real waveforms; `has_waveform = false` always.
+# - `genomic_report` (PK `report_id`) — metadata only; `data_limitation`
+#   non-nullable per [ADR-007](../../docs/adr/007-genomic-data-limitation.md).
 #
-# **Outputs.** Two Delta tables under `Tables/silver/`:
-# - `ecg_metadata` (PK `ecg_id`) — metadata only; Coherent ECG is SBML-model-generated, not a real waveform; `has_waveform = false` always.
-# - `genomic_report` (PK `report_id`) — metadata only; `data_limitation` non-nullable per [ADR-007](../../docs/adr/007-genomic-data-limitation.md).
+# **Expected scale (full Coherent).** `ecg_metadata` typically 0 rows.
+# `genomic_report` ≈ 419 rows.
 #
-# **Expected scale (full Coherent).** `ecg_metadata` is typically 0 rows (ECG lives in Binary waveform resources, not DiagnosticReport — documented). `genomic_report` ≈ 419 rows.
-#
-# Screenshot the `data_limitation` coverage cell as `07_silver_ecg_genomics.png`.
+# Screenshot the `data_limitation` contract assertion as `07_silver_ecg_genomics.png`.
 
 # METADATA ********************
 
@@ -35,11 +38,13 @@
 
 # ## Architecture context
 #
-# - **[ADR-007](../../docs/adr/007-genomic-data-limitation.md)** — `data_limitation` is a **first-class non-nullable column** on `genomic_report`. Synthea genomics models inheritance simulation, not real clinical variants; this column flags that fact to every downstream consumer (vs hiding it in a README footnote).
-# - **ECG candor:** the transform looks for `DiagnosticReport`s with ECG LOINC codes / keywords; Coherent's ECG signal is delivered via a separate Binary waveform (not in scope here). `has_waveform = false` reflects metadata-only extraction. Future Phase 3 ECG waveform feature extraction is in the roadmap (spec §9).
-# - **Clinical-code rule** — SNOMED / LOINC stored as `str`.
-#
-# Follows the 8-cell template (cells 5/7 iterate across the 2 tables).
+# - **[ADR-007](../../docs/adr/007-genomic-data-limitation.md)** —
+#   `data_limitation` non-nullable; flags Synthea genomics as
+#   inheritance simulation, not clinical variants.
+# - **ECG candor:** signal lives in Binary waveform resources (out of scope).
+#   `has_waveform = false` reflects metadata-only extraction.
+# - **[ADR-020](../../docs/adr/020-fabric-distributed-parsing.md)** —
+#   `applyInPandas` distribution.
 
 # METADATA ********************
 
@@ -56,16 +61,20 @@ from datetime import UTC, datetime
 os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
 
 from core.platform.factory import get_platform
-from core.transforms.fhir_parser import FHIRBundleParser
 from core.transforms.registry import SILVER_TABLES
+from fabric.spark_helpers import (
+    make_partition_parser,
+    pa_to_spark_schema,
+    read_fhir_bundles_distributed,
+)
 
 SPECIALTY_TABLES = ("ecg_metadata", "genomic_report")
-MIN_ROWS = {"ecg_metadata": 0, "genomic_report": 0}  # both can legitimately be 0 in dev cohorts.
 
 platform = get_platform()
+spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
 for t in SPECIALTY_TABLES:
-    print(f"  {t:<20s} PK={SILVER_TABLES[t].primary_key}")
+    print(f"  {t:<22s} PK={SILVER_TABLES[t].primary_key}")
 
 # METADATA ********************
 
@@ -76,9 +85,7 @@ for t in SPECIALTY_TABLES:
 
 # MARKDOWN ********************
 
-# ## Transform approach
-#
-# Parse-once → build → MERGE-upsert per table, same as 04. The genomic builder always populates `data_limitation` with the canonical Synthea note (`Synthea simulated inheritance — not clinical variants`) — if it ever comes out `None`, the transform raises `ValueError` (`.claude/rules/transforms.md` non-negotiable).
+# ## Step 1 — Read FHIR bundles once + cache
 
 # METADATA ********************
 
@@ -89,27 +96,46 @@ for t in SPECIALTY_TABLES:
 
 # CELL ********************
 
-parser = FHIRBundleParser()
-accumulated: dict[str, list[dict]] = {t: [] for t in SPECIALTY_TABLES}
-n_bundles = 0
-for path, bundle in platform.iter_bronze_files():
-    n_bundles += 1
-    parsed = parser.parse_bundle(bundle)
-    src = path.rsplit("/", 1)[-1]
-    for t in SPECIALTY_TABLES:
-        for r in parsed.get(t, []):
-            r["source_file"] = src
-            accumulated[t].append(r)
-print(f"Bundles read: {n_bundles}")
+from pyspark.sql import functions as F  # noqa: N812
 
-for t in SPECIALTY_TABLES:
-    print(f"  {t:<20s} records parsed: {len(accumulated[t]):>6,}")
+fhir_root = platform.storage_path("bronze", "fhir")
+bundles_df = read_fhir_bundles_distributed(spark, fhir_root).cache()
+print(f"Bundles cached: {bundles_df.count():,}")
 
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 2 — Per-table parse + write
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+per_table_counts = []
 for t in SPECIALTY_TABLES:
     spec = SILVER_TABLES[t]
-    table = spec.build(accumulated[t], ingest_ts)
-    platform.write_silver(t, table, mode="merge")
-    print(f"  silver.{t:<20s} rows={table.num_rows:>6,}  (mode=merge, CDC on)")
+    parse_udf = make_partition_parser(t, spec.build, ingest_ts)
+    spark_schema = pa_to_spark_schema(spec.schema)
+    silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
+        parse_udf, schema=spark_schema
+    )
+    platform.write_silver_spark(t, silver_df, mode="merge")
+    n = platform.read_silver_spark(t).count()
+    per_table_counts.append((t, n))
+    print(f"  silver.{t:<22s} rows={n:>6,}  (MERGE, CDC on)")
+
+bundles_df.unpersist()
 
 # METADATA ********************
 
@@ -122,7 +148,8 @@ for t in SPECIALTY_TABLES:
 
 # ## Validation
 #
-# For `genomic_report`: assert every row has a non-null `data_limitation` (the ADR-007 contract). For `ecg_metadata`: confirm `has_waveform` is `False` everywhere (the honest-limitation contract).
+# - `genomic_report.data_limitation` non-null on every row (ADR-007 contract).
+# - `ecg_metadata.has_waveform` false on every row (honest-limitation contract).
 
 # METADATA ********************
 
@@ -133,13 +160,8 @@ for t in SPECIALTY_TABLES:
 
 # CELL ********************
 
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-
-# genomic_report — ADR-007 contract check
-gen_df = spark.read.format("delta").load(platform.storage_path("silver", "genomic_report"))
+# genomic_report — ADR-007 contract
+gen_df = platform.read_silver_spark("genomic_report")
 gen_count = gen_df.count()
 null_limitations = gen_df.filter(F.col("data_limitation").isNull()).count()
 print(f"silver.genomic_report rows: {gen_count:,}")
@@ -152,15 +174,15 @@ if gen_count > 0:
     display(gen_df.limit(3))
 
 # ecg_metadata — has_waveform contract
-ecg_df = spark.read.format("delta").load(platform.storage_path("silver", "ecg_metadata"))
+ecg_df = platform.read_silver_spark("ecg_metadata")
 ecg_count = ecg_df.count()
 print(f"\nsilver.ecg_metadata rows: {ecg_count:,}")
 if ecg_count > 0:
-    waveform_count = ecg_df.filter(F.col("has_waveform") == True).count()  # noqa: E712
-    print(f"  rows with has_waveform=True: {waveform_count}  (expected 0 — metadata-only)")
+    waveform_count = ecg_df.filter(F.col("has_waveform")).count()
+    print(f"  rows with has_waveform=True: {waveform_count}  (expected 0)")
     display(ecg_df.limit(3))
 else:
-    print("  ECG metadata-from-DiagnosticReport is rare in Coherent; 0 is expected and honest.")
+    print("  ECG from DiagnosticReport is rare in Coherent; 0 is expected and honest.")
 
 # METADATA ********************
 

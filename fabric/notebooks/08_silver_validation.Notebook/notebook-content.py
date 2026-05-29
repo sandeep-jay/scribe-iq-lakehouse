@@ -12,15 +12,17 @@
 
 # # 08 — Silver validation → `silver.ingest_log`
 #
-# **Purpose.** Run the full validation rule set across all 10 Silver tables and append every result (per rule, per table) to `silver.ingest_log`. This is the audit table the corpus contract relies on — `ingest_log` is queryable evidence that the medallion built correctly.
+# **Purpose.** Run the full validation rule set across all 10 Silver tables
+# and append every rule outcome (per table, per rule) to `silver.ingest_log`.
+# Audit table the corpus contract relies on; queryable evidence the medallion
+# built correctly.
 #
 # **Inputs.** Every Silver table populated by 02–07.
 #
-# **Output.** Delta table `Tables/silver/ingest_log` (append-only). Each row: `table_name · check_name · passed · detail · ingest_ts`.
+# **Output.** Delta table `Tables/silver/ingest_log` (append-only). Each row:
+# `table_name · check_name · passed · detail · ingest_ts`.
 #
-# **Run after.** 02 → 07 (every Silver table built).
-#
-# Screenshot the per-table pass/fail summary cell as `13_ingest_log.png` per `fabric/docs/SCREENSHOTS.md`.
+# Screenshot the per-table summary as `13_ingest_log.png`.
 
 # METADATA ********************
 
@@ -31,14 +33,21 @@
 
 # MARKDOWN ********************
 
-# ## Architecture context
+# ## Architecture context — Spark for I/O, pa.Table for rule checks
 #
-# - Same `validate_table` and `results_to_arrow` used by the local CLI (`core.surfaces.cli.pipeline.run_pipeline`) and the Dagster `@asset_check`s — single rule set, three execution surfaces.
-# - Rules per table come from `core.validation.schema_registry` (row count thresholds, non-null required columns, referential integrity, clinical ranges where applicable).
-# - A failing check does **not** crash the notebook — it surfaces in `ingest_log` as `passed=False` and is screenshot-evidence of honest reporting. The cell at the end raises only if a Silver table is missing entirely (a structural failure).
-# - `silver.ingest_log` is **append-only**: every run is a new historical entry. To find the latest run, query `MAX(ingest_ts)`.
+# `validate_table` runs rule-by-rule on a `pa.Table` (matches CLI + Dagster
+# call sites — ADR-002 portability). Notebook flow:
+# 1. **Spark reads** each Silver Delta via `platform.read_silver_spark` →
+#    `platform.read_silver` (pa.Table convenience wrapper).
+# 2. **Driver-side validation** — `validate_table(name, pa_table)` produces
+#    `ValidationResult(checks=[CheckOutcome, ...])`. Validation rules are
+#    metadata-bound aggregations (counts, distinct, non-null fractions) —
+#    fast on the driver after Spark hands the data over.
+# 3. **Spark-native write** — `platform.write_silver_spark("ingest_log",
+#    spark_df, mode="append")` lands the audit row.
 #
-# Follows the 8-cell template (cells 5/7 are loops across all 10 tables).
+# `ingest_log` itself is append-only (no PK in registry; append never goes
+# through MERGE so no PK lookup needed).
 
 # METADATA ********************
 
@@ -59,6 +68,7 @@ from core.transforms.registry import SILVER_TABLES
 from core.validation.validate import results_to_arrow, validate_table
 
 platform = get_platform()
+spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
 print(f"Platform: {platform.name} · Validating {len(SILVER_TABLES)} Silver tables")
 print(f"ingest_ts: {ingest_ts.isoformat()}")
@@ -72,14 +82,11 @@ print(f"ingest_ts: {ingest_ts.isoformat()}")
 
 # MARKDOWN ********************
 
-# ## Transform approach (validation pass)
+# ## Step 1 — Validate each Silver table
 #
-# For each Silver table in the registry:
-# 1. `platform.read_silver(name)` → `pa.Table`
-# 2. `validate_table(name, table)` → `ValidationResult` with rule-by-rule outcomes
-# 3. Append the row count and pass/fail to in-memory summary; on failure, also send a `warning` alert via the platform
-#
-# After the loop, `results_to_arrow(results, ingest_ts)` flattens every rule outcome to an Arrow table and we `platform.write_silver("ingest_log", ..., mode="append")` it. Re-running the notebook appends a fresh batch — no overwrite, no loss of history.
+# For each of the 10 Silver tables: Spark-read → pa.Table → `validate_table`
+# → accumulate results. Each ValidationResult carries every rule's outcome,
+# not just failures (the Dagster asset graph relies on the same shape).
 
 # METADATA ********************
 
@@ -93,7 +100,7 @@ print(f"ingest_ts: {ingest_ts.isoformat()}")
 summary_rows = []
 results = []
 for name in SILVER_TABLES:
-    table = platform.read_silver(name)
+    table = platform.read_silver(name)  # pa.Table via Spark→pandas convert
     result = validate_table(name, table)
     results.append(result)
     n_rules = len(result.checks)
@@ -101,12 +108,13 @@ for name in SILVER_TABLES:
     summary_rows.append((name, table.num_rows, n_rules, n_failed, result.passed))
     platform.log_metric(name, "row_count", table.num_rows)
     if not result.passed:
-        platform.send_alert("warning", f"Validation failed for silver.{name}: {result.failed_checks}")
-    print(f"  silver.{name:<20s} rows={table.num_rows:>8,}  rules={n_rules:>2}  failed={n_failed:>2}  passed={result.passed}")
-
-ingest_log_table = results_to_arrow(results, ingest_ts)
-platform.write_silver("ingest_log", ingest_log_table, mode="append")
-print(f"\nAppended {ingest_log_table.num_rows} rule outcomes to silver.ingest_log")
+        platform.send_alert(
+            "warning", f"Validation failed for silver.{name}: {result.failed_checks}"
+        )
+    print(
+        f"  silver.{name:<22s} rows={table.num_rows:>8,}  "
+        f"rules={n_rules:>2}  failed={n_failed:>2}  passed={result.passed}"
+    )
 
 # METADATA ********************
 
@@ -117,12 +125,11 @@ print(f"\nAppended {ingest_log_table.num_rows} rule outcomes to silver.ingest_lo
 
 # MARKDOWN ********************
 
-# ## Validation (of validation) — the audit shape
+# ## Step 2 — Write all rule outcomes to silver.ingest_log
 #
-# Three views to screenshot:
-# 1. Per-table summary (rows, rule count, failed count, overall pass)
-# 2. Recent `ingest_log` entries for *this* run (filtered by `ingest_ts`)
-# 3. Any failing rule details (empty if everything passes)
+# `results_to_arrow` flattens every rule outcome into rows. We convert the
+# resulting pa.Table to a Spark DataFrame and append via `write_silver_spark`
+# — same write path silver tables use.
 
 # METADATA ********************
 
@@ -133,10 +140,37 @@ print(f"\nAppended {ingest_log_table.num_rows} rule outcomes to silver.ingest_lo
 
 # CELL ********************
 
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
+ingest_log_pa = results_to_arrow(results, ingest_ts)
+ingest_log_df = spark.createDataFrame(ingest_log_pa.to_pandas())
+platform.write_silver_spark("ingest_log", ingest_log_df, mode="append")
+print(f"\nAppended {ingest_log_pa.num_rows} rule outcomes to silver.ingest_log")
 
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Validation views
+#
+# Three Spark-native views — all screenshottable:
+# 1. Per-table summary.
+# 2. This run's `ingest_log` rows (filter by `ingest_ts`).
+# 3. Any failing rules.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+from pyspark.sql import functions as F  # noqa: N812
 
 summary_df = spark.createDataFrame(
     summary_rows,
@@ -145,12 +179,12 @@ summary_df = spark.createDataFrame(
 print("Per-table validation summary:")
 display(summary_df)
 
-log_df = spark.read.format("delta").load(platform.storage_path("silver", "ingest_log"))
+log_df = platform.read_silver_spark("ingest_log")
 this_run = log_df.filter(F.col("ingest_ts") == F.lit(ingest_ts))
 print(f"\nThis run's ingest_log rows: {this_run.count()}")
 display(this_run.orderBy("table_name", "check_name").limit(50))
 
-failed = this_run.filter(F.col("passed") == False)  # noqa: E712
+failed = this_run.filter(~F.col("passed"))
 failed_count = failed.count()
 print(f"\nFailing rules this run: {failed_count}")
 if failed_count > 0:

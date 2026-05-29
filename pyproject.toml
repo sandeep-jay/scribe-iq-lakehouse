@@ -70,6 +70,12 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Fabric notebooks are NOT regular Python — `notebook-content.py` uses Fabric
+# magic-comment cell delimiters (# CELL ********************,
+# # MARKDOWN ********************, # METADATA blocks). Linting them as Python
+# would chase tail-of-cell formatting that breaks the cell structure.
+# Source-of-truth = Fabric (ADR-021); transforms live in core/.
+extend-exclude = ["fabric/notebooks/**/notebook-content.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "D"]
@@ -87,3 +93,5 @@ convention = "google"
 [tool.black]
 line-length = 100
 target-version = ["py311"]
+# Fabric notebooks — see [tool.ruff] extend-exclude rationale.
+force-exclude = 'fabric/notebooks/.*/notebook-content\.py'

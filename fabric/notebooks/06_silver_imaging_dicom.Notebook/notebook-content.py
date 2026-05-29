@@ -10,17 +10,21 @@
 
 # MARKDOWN ********************
 
-# # 06 — Silver: imaging_study
+# # 06 — Silver: `imaging_study` (distributed Spark, FHIR-only on Fabric)
 #
-# **Purpose.** Build `silver.imaging_study` from FHIR `ImagingStudy` resources. DICOM header enrichment (ADR-013) is supported by the transform but is **opt-in** — Phase 4 of the medallion pulls FHIR-only by default; DICOM file ingest is deferred.
+# **Purpose.** Build `silver.imaging_study` from FHIR `ImagingStudy` via the
+# distributed Spark pattern. DICOM header enrichment (ADR-013) is supported
+# by the transform but **opt-in** — boto3 anonymous Bronze ingest doesn't
+# include `.dcm` files, so Fabric defaults to FHIR-only.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json` for FHIR metadata. **Optional:** `Files/bronze/dicom/*.dcm` for header enrichment.
+# **Outputs.** Delta `Tables/silver/imaging_study` (MERGE on `study_id`,
+# CDC on). When DICOM file is absent, `dicom_extracted = false` and header
+# columns are null — **expected, not a bug**.
 #
-# **Output.** Delta table `Tables/silver/imaging_study` (CDC enabled, MERGE-upserted on `study_id`). Carries FHIR fields + optional DICOM headers (study_date, dimensions, slice thickness, etc.). When DICOM file is absent, `dicom_extracted = false` and header columns are null — **expected, not a bug**.
+# **Expected scale.** ~3,752 studies at full Coherent; ~298 have a `.dcm`
+# in the open dataset.
 #
-# **Expected scale.** ~3,752 imaging studies at full Coherent scale; 298 of those have a downloadable DICOM file in the open dataset.
-#
-# Screenshot the modality / body-site breakdown cell as `06_silver_imaging.png`.
+# Screenshot modality / body-site breakdown as `06_silver_imaging.png`.
 
 # METADATA ********************
 
@@ -33,11 +37,14 @@
 
 # ## Architecture context
 #
-# - **[ADR-006](../../docs/adr/006-dicom-stop-before-pixels.md)** — `pydicom.dcmread(..., stop_before_pixels=True)` always. Never load pixel data in this transform tier — metadata only, GPU-free.
-# - **[ADR-013](../../docs/adr/013-dicom-ingest-and-linkage.md)** — FHIR↔DICOM linkage by `StudyInstanceUID`. Synthea Coherent ships placeholder `UNKNOWN` description tags that this transform normalizes to `None` to avoid faux signal.
-# - **DICOM enrichment is optional in Fabric:** the boto3 anonymous ingest in `01_bronze_ingest` pulls FHIR JSON only; the ~9 GB DICOM prefix is intentionally deferred. The transform handles `dicom_resolver=None` cleanly — `dicom_extracted = false` for all rows in that case.
-#
-# Follows the 8-cell template.
+# - **[ADR-006](../../docs/adr/006-dicom-stop-before-pixels.md)** —
+#   `pydicom.dcmread(..., stop_before_pixels=True)` always.
+# - **[ADR-013](../../docs/adr/013-dicom-ingest-and-linkage.md)** — FHIR↔DICOM
+#   by `StudyInstanceUID`. Coherent placeholder `UNKNOWN` tags normalized to
+#   `None`.
+# - **[ADR-020](../../docs/adr/020-fabric-distributed-parsing.md)** —
+#   `applyInPandas` distribution. DICOM enrichment requires broadcasting
+#   `DicomIndex` to executors; deferred.
 
 # METADATA ********************
 
@@ -54,16 +61,21 @@ from datetime import UTC, datetime
 os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
 
 from core.platform.factory import get_platform
-from core.transforms.fhir_parser import FHIRBundleParser
 from core.transforms.registry import SILVER_TABLES
+from fabric.spark_helpers import (
+    make_partition_parser,
+    pa_to_spark_schema,
+    read_fhir_bundles_distributed,
+)
 
 TABLE = "imaging_study"
 MIN_ROWS = 1
 
 platform = get_platform()
+spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
 spec = SILVER_TABLES[TABLE]
-print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primary_key}")
+print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
 
 # METADATA ********************
 
@@ -74,11 +86,7 @@ print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primar
 
 # MARKDOWN ********************
 
-# ## Transform approach
-#
-# 1. Parse all bundles once; collect `ImagingStudy` records.
-# 2. Call `build_silver_imaging(records, ingest_ts)` — FHIR fields only on this notebook's path (no `dicom_resolver` passed). To enable DICOM header enrichment in the future, land `.dcm` files under `Files/bronze/dicom/`, instantiate `DicomIndex`, and pass it as `dicom_resolver` into the parser (mirrors what `core.surfaces.cli.pipeline._parse_cohort` does locally — see ADR-013).
-# 3. MERGE-upsert into Delta.
+# ## Step 1 — Read FHIR bundles distributed
 
 # METADATA ********************
 
@@ -89,23 +97,53 @@ print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primar
 
 # CELL ********************
 
-parser = FHIRBundleParser()
-records: list[dict] = []
-n_bundles = 0
-for path, bundle in platform.iter_bronze_files():
-    n_bundles += 1
-    parsed = parser.parse_bundle(bundle)  # dicom_resolver=None → FHIR-only
-    src = path.rsplit("/", 1)[-1]
-    for r in parsed.get(TABLE, []):
-        r["source_file"] = src
-        records.append(r)
-print(f"Bundles read: {n_bundles} · {TABLE} records parsed: {len(records):,}")
+fhir_root = platform.storage_path("bronze", "fhir")
+bundles_df = read_fhir_bundles_distributed(spark, fhir_root)
+print(f"Bundles read: {bundles_df.count():,}")
 
-table = spec.build(records, ingest_ts)
-print(f"Built {TABLE} table: {table.num_rows:,} rows, {len(table.schema)} columns")
+# METADATA ********************
 
-platform.write_silver(TABLE, table, mode="merge")
-print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 2 — Distributed parse (FHIR-only)
+#
+# `parse_bundle` called with `dicom_resolver=None` (default). `dicom_extracted`
+# = false for all rows. To enable DICOM enrichment later: land `.dcm` files,
+# broadcast `DicomIndex` to executors, pass resolver into `parse_bundle`.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+from pyspark.sql import functions as F  # noqa: N812
+
+parse_udf = make_partition_parser(TABLE, spec.build, ingest_ts)
+spark_schema = pa_to_spark_schema(spec.schema)
+silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
+    parse_udf, schema=spark_schema
+)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+platform.write_silver_spark(TABLE, silver_df, mode="merge")
+print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 
 # METADATA ********************
 
@@ -118,7 +156,8 @@ print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
 
 # ## Validation
 #
-# Row count + modality/body-site breakdown (the most useful imaging shape signal). DICOM-header coverage is reported via `dicom_extracted` — expected to be 0% on Fabric (no DICOM files landed).
+# Row count + DICOM-coverage percent (0% expected on Fabric) + modality +
+# body-site breakdowns.
 
 # METADATA ********************
 
@@ -129,25 +168,22 @@ print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
 
 # CELL ********************
 
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-df = spark.read.format("delta").load(platform.storage_path("silver", TABLE))
-count = df.count()
-dicom_pct = df.agg(F.round(100 * F.avg(F.col("dicom_extracted").cast("int")), 1).alias("dicom_pct")).first()["dicom_pct"]
+written = platform.read_silver_spark(TABLE)
+count = written.count()
+dicom_pct = written.agg(
+    F.round(100 * F.avg(F.col("dicom_extracted").cast("int")), 1).alias("dicom_pct")
+).first()["dicom_pct"]
 print(f"silver.{TABLE} row count: {count:,}")
-print(f"DICOM-header coverage: {dicom_pct}% (expected 0% without DICOM file ingest)")
+print(f"DICOM-header coverage: {dicom_pct}% (expected 0% on Fabric — DICOM ingest deferred)")
 assert count >= MIN_ROWS, f"Row count {count} below minimum {MIN_ROWS}"
 
 print("\nModality breakdown:")
-display(df.groupBy("modality").count().orderBy(F.col("count").desc()).limit(10))
+display(written.groupBy("modality").count().orderBy(F.col("count").desc()).limit(10))
 
 print("\nBody-site breakdown:")
-display(df.groupBy("body_site_display").count().orderBy(F.col("count").desc()).limit(10))
+display(written.groupBy("body_site_display").count().orderBy(F.col("count").desc()).limit(10))
 
-print("\nSample rows:")
-display(df.limit(5))
+display(written.limit(5))
 
 # METADATA ********************
 

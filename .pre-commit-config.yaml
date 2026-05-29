@@ -67,9 +67,3 @@ repos:
         language: system
         pass_filenames: false
         files: '^(core/gold/encounter_summary\.py|core/scripts/gen_corpus_schema\.py|schemas/gold_encounter_summary\.json)$'
-      - id: fabric-notebooks-regen
-        name: Fabric .Notebook/ outputs match .ipynb sources
-        entry: python core/scripts/convert_ipynb_to_fabric.py --check
-        language: system
-        pass_filenames: false
-        files: '^fabric/notebooks/.*\.ipynb$|^core/scripts/convert_ipynb_to_fabric\.py$'

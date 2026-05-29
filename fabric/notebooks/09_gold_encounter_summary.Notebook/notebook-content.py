@@ -12,19 +12,24 @@
 
 # # 09 — Gold: `encounter_summary` + corpus manifest
 #
-# **Purpose.** Denormalize the 10 Silver tables into `gold.encounter_summary` — one row per encounter, with patient demographics, the encounter's SOAP note, active conditions/medications/vitals as-of-encounter-date, latest imaging/ECG/genomics. This is the **corpus contract handoff** to downstream consumers (`scribe-iq` RAG, `clinical-bert-pipeline` NLP).
+# **Purpose.** Denormalize the 10 Silver tables into `gold.encounter_summary`
+# — one row per encounter, with patient demographics, the encounter's SOAP
+# note, active conditions / medications / vitals as-of-encounter-date, latest
+# imaging / ECG / genomics. The corpus contract handoff to downstream
+# consumers (`scribe-iq` RAG, `clinical-bert-pipeline` NLP).
 #
 # **Inputs.** All 10 Silver Delta tables populated by 02–07.
 #
 # **Outputs.**
-# - Delta table `Tables/gold/encounter_summary` (overwrite — Gold is fully derived).
-# - JSON file `Files/gold/_metadata/corpus_manifest.json` — lineage (Silver versions, row counts) + corpus stats (counts, coverage %, distribution).
+# - Delta `Tables/gold/encounter_summary` (overwrite — Gold is fully derived).
+# - JSON `Files/gold/_metadata/corpus_manifest.json` — Silver lineage + corpus
+#   stats.
 #
-# **Expected scale.** ~143,946 encounter summary rows at full Coherent scale (matches `silver.encounter`).
+# **Expected scale.** ~143,946 rows at full Coherent (matches `silver.encounter`).
 #
-# **Contract version.** 1.1.0 — see [docs/CORPUS_CONTRACT.md](../../docs/CORPUS_CONTRACT.md). Any schema change is a contract version bump.
+# **Contract version.** 1.1.0 — see [docs/CORPUS_CONTRACT.md](../../docs/CORPUS_CONTRACT.md).
 #
-# Screenshot the corpus-stats + sample-encounter card as `09_gold_encounter_summary.png`.
+# Screenshot the sample-encounter card (Cell 13) as `09_gold_encounter_summary.png`.
 
 # METADATA ********************
 
@@ -35,14 +40,26 @@
 
 # MARKDOWN ********************
 
-# ## Architecture context
+# ## Architecture context — Spark I/O, pure-Python global denorm
 #
-# - **[ADR-012](../../docs/adr/012-gold-encounter-summary.md)** — Gold grain = encounter; engine = pure-Python pyarrow; explicit `GOLD_SCHEMA` matched exactly.
-# - **[ADR-014](../../docs/adr/014-problem-list-as-of-date.md)** — active_conditions / active_medications are computed *as of the encounter date*, not current-as-of-now. The killer query — chronic disease accumulates visibly over a patient's encounter timeline.
-# - **Lineage:** Silver table versions are read via `platform.table_version("silver", name)` and captured in the manifest so downstream consumers can pin a corpus build to specific Silver versions.
-# - **Idempotent rebuild:** Gold is overwrite-mode; any Silver change → re-run 09 to regenerate. No Gold MERGE.
+# Gold is a **global** denormalization: every encounter joins back to active
+# conditions, medications, vitals as-of-date (ADR-014), latest SOAP / imaging
+# / ECG / genomics. Polars handles this on the driver in ~5s at full
+# Coherent scale — much faster than the equivalent Spark DataFrame DAG would
+# be at this row count, with simpler code.
 #
-# Pure logic lives in `core/gold/encounter_summary.py` + `core/gold/corpus_manifest.py`. This notebook is the Fabric execution surface; the same builders run under the CLI (`python -m core.surfaces.cli.pipeline --gold-only`) and the Dagster `gold_encounter_summary` asset.
+# Notebook flow:
+# 1. **Spark reads** each Silver Delta in parallel.
+# 2. **Driver-side build** — `build_encounter_summary(silver_dict, ts,
+#    versions)` runs the canonical Polars denorm logic (same code LocalLite
+#    uses; ADR-002).
+# 3. **Spark-native write** — Gold Delta via `write_gold_spark`; CDC on.
+# 4. **Manifest** — corpus stats + Silver lineage as JSON in
+#    `Files/gold/_metadata/`.
+#
+# Pure logic lives in `core/gold/encounter_summary.py` +
+# `core/gold/corpus_manifest.py`. ADR-020 explains the Spark-I/O +
+# pure-Python-compute split.
 
 # METADATA ********************
 
@@ -68,6 +85,7 @@ from core.gold.encounter_summary import (
 from core.platform.factory import get_platform
 
 platform = get_platform()
+spark = platform.get_spark_session()
 created_ts = datetime.now(UTC)
 print(f"Platform: {platform.name} · Building gold.{TABLE_NAME} · Contract v{CONTRACT_VERSION}")
 print(f"Reading {len(SILVER_SOURCES)} Silver sources: {', '.join(SILVER_SOURCES)}")
@@ -81,13 +99,11 @@ print(f"Reading {len(SILVER_SOURCES)} Silver sources: {', '.join(SILVER_SOURCES)
 
 # MARKDOWN ********************
 
-# ## Transform approach
+# ## Step 1 — Spark-read every Silver source (parallel, distributed I/O)
 #
-# 1. Read every Silver source table via the platform (`platform.read_silver(name) → pa.Table`).
-# 2. Capture each Silver table's Delta version via `platform.table_version("silver", name)` — these go into the lineage manifest.
-# 3. `build_encounter_summary(silver_tables, created_ts, silver_versions)` does the join/denormalization in pure Python + pyarrow.
-# 4. `platform.write_gold("encounter_summary", gold)` — overwrite mode + CDC on.
-# 5. `build_corpus_manifest(...)` produces the lineage JSON (Silver versions + corpus stats); `platform.write_gold_manifest(...)` writes it to `Files/gold/_metadata/corpus_manifest.json`.
+# `platform.read_silver` for each table — internally uses
+# `read_silver_spark` then materializes to pa.Table for the global build.
+# Captures Delta versions for the manifest's lineage block.
 
 # METADATA ********************
 
@@ -104,13 +120,58 @@ versions = {name: platform.table_version("silver", name) for name in SILVER_SOUR
 
 print("Silver source row counts (and Delta versions):")
 for name in SILVER_SOURCES:
-    print(f"  silver.{name:<20s} rows={counts[name]:>8,}  v{versions[name]}")
+    print(f"  silver.{name:<22s} rows={counts[name]:>8,}  v{versions[name]}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 2 — Build Gold via canonical builder (driver-side, Polars)
+#
+# `build_encounter_summary` is the single source of truth for Gold across
+# LocalLite, Dagster, and Fabric. Returns a `pa.Table` matching `GOLD_SCHEMA`
+# exactly.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
 
 gold = build_encounter_summary(silver, created_ts=created_ts, silver_versions=versions)
-print(f"\nBuilt gold.{TABLE_NAME}: {gold.num_rows:,} rows, {len(gold.schema)} columns")
+print(f"Built gold.{TABLE_NAME}: {gold.num_rows:,} rows, {len(gold.schema)} columns")
 
-platform.write_gold(TABLE_NAME, gold)
-print(f"Wrote gold.{TABLE_NAME} to OneLake (overwrite mode, CDC on)")
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 3 — Spark-native Delta write + manifest
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+gold_df = spark.createDataFrame(gold.to_pandas())
+platform.write_gold_spark(TABLE_NAME, gold_df)
+print(f"Wrote gold.{TABLE_NAME} to OneLake (Spark overwrite, CDC on)")
 
 manifest = build_corpus_manifest(
     gold,
@@ -131,11 +192,10 @@ print(f"Wrote corpus_manifest.json (contract v{manifest['contract_version']})")
 
 # MARKDOWN ********************
 
-# ## Validation — corpus shape + sample encounter card
+# ## Validation — corpus shape
 #
-# Two cells of evidence:
-# 1. **Corpus stats** from the manifest — counts, coverage %, distribution per the contract.
-# 2. **Sample encounter card** — one fully-rendered row showing the denormalization actually works (patient demographics + SOAP note + active conditions / medications). This is the screenshot reviewers care about most after the SOAP-note demo in 05.
+# Two cells: corpus stats + denorm sample row table. Sample encounter card
+# (Cell 13) is the screenshot.
 
 # METADATA ********************
 
@@ -147,22 +207,21 @@ print(f"Wrote corpus_manifest.json (contract v{manifest['contract_version']})")
 # CELL ********************
 
 import json
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
 
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-gold_df = spark.read.format("delta").load(platform.storage_path("gold", TABLE_NAME))
+from pyspark.sql import functions as F  # noqa: N812
+
+gold_df = platform.read_gold_spark(TABLE_NAME)
 count = gold_df.count()
 print(f"gold.{TABLE_NAME} row count: {count:,}")
 
 print("\n=== corpus_stats from manifest ===")
 print(json.dumps(manifest["corpus_stats"], indent=2))
 
-print("\n=== schema (truncated to 20 cols) ===")
+print("\n=== schema (first 20 cols) ===")
 for f in list(gold_df.schema)[:20]:
     print(f"  {f.name:<32s} {f.dataType.simpleString()}")
 
-print("\n=== sample rows (3) ===")
+print("\n=== sample rows ===")
 display(
     gold_df.select(
         "summary_id",
@@ -187,7 +246,7 @@ display(
 
 # CELL ********************
 
-# Sample encounter card — find one with a substantial SOAP note + ≥3 active conditions
+# Sample encounter card — substantial SOAP + ≥3 conditions if available
 card = (
     gold_df.filter(F.length("latest_soap_note") >= 200)
     .filter(F.size("active_conditions") >= 3)
@@ -204,18 +263,19 @@ meds_html = "".join(f"<li>{m}</li>" for m in (r["active_medications"] or [])[:10
 soap = (r["latest_soap_note"] or "(no SOAP note)").replace("<", "&lt;").replace(">", "&gt;")
 
 displayHTML(
-    f"<div style='font-family:-apple-system,sans-serif;max-width:900px;padding:16px;line-height:1.55;'>"
+    f"<div style='font-family:-apple-system,sans-serif;max-width:900px;"
+    f"padding:16px;line-height:1.55;'>"
     f"<h3>Sample encounter — gold.{TABLE_NAME}</h3>"
-    f"<p><b>patient_id:</b> <code>{r['patient_id']}</code> &nbsp;·&nbsp; "
+    f"<p><b>patient_id:</b> <code>{r['patient_id']}</code>  ·  "
     f"<b>encounter_id:</b> <code>{r['encounter_id']}</code></p>"
-    f"<p><b>date:</b> {r['encounter_date']} &nbsp;·&nbsp; "
-    f"<b>age:</b> {r['patient_age']} &nbsp;·&nbsp; <b>gender:</b> {r['patient_gender']} &nbsp;·&nbsp; "
+    f"<p><b>date:</b> {r['encounter_date']}  ·  "
+    f"<b>age:</b> {r['patient_age']}  ·  <b>gender:</b> {r['patient_gender']}  ·  "
     f"<b>type:</b> {r['encounter_type']}</p><hr>"
     f"<h4>Active conditions (as of encounter date)</h4><ul>{conditions_html or '<li>(none)</li>'}</ul>"
     f"<h4>Active medications</h4><ul>{meds_html or '<li>(none)</li>'}</ul>"
     f"<h4>SOAP note</h4>"
-    f"<pre style='white-space:pre-wrap;font-size:13px;background:#f6f8fa;padding:14px;border-radius:6px;'>{soap}</pre>"
-    f"</div>"
+    f"<pre style='white-space:pre-wrap;font-size:13px;background:#f6f8fa;"
+    f"padding:14px;border-radius:6px;'>{soap}</pre></div>"
 )
 
 # METADATA ********************
@@ -230,7 +290,7 @@ displayHTML(
 platform.log_metric(TABLE_NAME, "row_count", count)
 platform.log_metric(TABLE_NAME, "contract_version", CONTRACT_VERSION)
 print(f"09_gold_encounter_summary complete — {count:,} rows, contract v{CONTRACT_VERSION}.")
-print("Next: 10_gold_validation (final contract check)")
+print("Next: 10_gold_validation (final contract gate)")
 
 # METADATA ********************
 

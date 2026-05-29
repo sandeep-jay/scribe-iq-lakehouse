@@ -10,23 +10,25 @@
 
 # MARKDOWN ********************
 
-# # 02 — Silver: patient
+# # 02 — Silver: `patient` (distributed Spark)
 #
-# **Purpose.** Build `silver.patient` from Bronze FHIR bundles.
+# **Purpose.** Build `silver.patient` from Bronze FHIR bundles using Spark's
+# distributed `applyInPandas` — each executor parses a partition of bundles in
+# parallel, calling the same pure-Python `core.transforms.silver_patient.build_silver_patient`
+# the LocalLite tier uses. One source of truth for the transform; Fabric brings
+# the parallelism.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json` (Synthea Coherent bundles, one per patient — landed by `01_bronze_ingest`).
+# **Inputs.** `Files/bronze/fhir/cohort=*/*.json` (Synthea Coherent bundles).
 #
-# **Output.** Delta table `Tables/silver/patient` (CDC enabled, MERGE-upserted on `patient_id`).
+# **Output.** Delta table `Tables/silver/patient` (MERGE-upserted on `patient_id`,
+# CDC enabled).
 #
-# **Expected scale.** 1 row per patient → ~1,278 rows at full Coherent scale.
+# **Expected scale.** ~1,278 rows at full Coherent (1 row per patient).
 #
-# **Dependencies (Environment `scribe-iq-lakehouse-env`).**
-# - `scribe_iq_lakehouse-0.1.0` wheel — provides `core.transforms.silver_patient`, `FabricPlatform`
-# - `pyarrow`, `python-dateutil` (transform deps)
+# **Dependencies.** Env `scribe-iq-lakehouse-env` with the core wheel +
+# `pyarrow`, `pydicom`, `python-dateutil`, `boto3`. Run after `01_bronze_ingest`.
 #
-# **Run after.** `01_bronze_ingest` (otherwise `Files/bronze/fhir/` is empty).
-#
-# Screenshot the validation cell output as `02_silver_patient.png` per `fabric/docs/SCREENSHOTS.md`.
+# Screenshot the Cell 11 `display()` output as `02_silver_patient.png`.
 
 # METADATA ********************
 
@@ -39,15 +41,23 @@
 
 # ## Architecture context
 #
-# - **[ADR-002](../../docs/adr/002-platform-abstraction.md)** — All cloud I/O via `FabricPlatform`; this notebook never touches abfss paths directly.
-# - **[ADR-004](../../docs/adr/004-arrow-interchange.md)** — `build_silver_patient` returns `pa.Table` with an explicit schema.
-# - **[ADR-008](../../docs/adr/008-dict-based-fhir-parsing.md)** — Bundles parsed as plain dicts; every FHIR field accessed via `.get()` with a default.
-# - **[ADR-009](../../docs/adr/009-local-silver-materialization.md)** — Delta MERGE-upsert with CDC enabled; mirrored exactly on Fabric.
-# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — Target-side dedup guard runs automatically inside `FabricPlatform._write_delta` if pre-existing duplicates are present on the `patient_id` key.
+# - **[ADR-002](../../docs/adr/002-platform-abstraction.md)** — Pure transforms
+#   in `core/`; this notebook is the Fabric execution surface.
+# - **[ADR-020](../../docs/adr/020-fabric-distributed-parsing.md)** — Distributed
+#   parsing via `applyInPandas`: `core.transforms.silver_patient.build_silver_patient`
+#   is unchanged; we wrap it in a Spark UDF that runs on every executor.
+# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — Pre-merge
+#   target-side dedup guard runs inside `platform.write_silver_spark`.
+# - **[ADR-009](../../docs/adr/009-local-silver-materialization.md)** — Delta
+#   MERGE on the primary key, CDC enabled.
 #
-# Pure logic lives in `core/transforms/silver_patient.py` — this notebook is just the Fabric execution surface. The same `build_silver_patient` runs under the local CLI (`python -m core.surfaces.cli.pipeline`) and the Dagster asset graph; only the platform parameter changes.
-#
-# Follows the 8-cell template ([`.claude/rules/notebooks.md`](../../.claude/rules/notebooks.md)).
+# Distributed pipeline:
+# 1. **Read** — `spark.read.text(wholetext=True)` reads each bundle as one row,
+#    distributed across partitions.
+# 2. **Parse** — `applyInPandas` runs the partition-parser UDF on each Spark
+#    executor in parallel. Each UDF call uses the existing `FHIRBundleParser`
+#    + `build_silver_patient`.
+# 3. **Write** — Spark-native Delta MERGE via `platform.write_silver_spark`.
 
 # METADATA ********************
 
@@ -64,16 +74,22 @@ from datetime import UTC, datetime
 os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
 
 from core.platform.factory import get_platform
-from core.transforms.fhir_parser import FHIRBundleParser
 from core.transforms.registry import SILVER_TABLES
+from fabric.spark_helpers import (
+    make_partition_parser,
+    pa_to_spark_schema,
+    read_fhir_bundles_distributed,
+)
 
 TABLE = "patient"
-MIN_ROWS = 1  # Coherent demo cohort: assert at least one patient landed; relax/raise per scope.
+MIN_ROWS = 1
 
 platform = get_platform()
+spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
 spec = SILVER_TABLES[TABLE]
-print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primary_key}")
+print(f"Platform: {platform.name} · Table: {TABLE} · PK: {spec.primary_key}")
+print(f"Spark version: {spark.version} · ingest_ts: {ingest_ts.isoformat()}")
 
 # METADATA ********************
 
@@ -84,12 +100,15 @@ print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primar
 
 # MARKDOWN ********************
 
-# ## Transform approach
+# ## Step 1 — Read FHIR bundles as a Spark DataFrame
 #
-# 1. Read every FHIR bundle from `Files/bronze/fhir/cohort=*/` via `platform.read_bronze_fhir()` (no cohort filter — all cohorts in one pass).
-# 2. Parse each bundle with `FHIRBundleParser` and collect Patient records.
-# 3. Call `spec.build(records, ingest_ts)` (which is `build_silver_patient`) to produce a typed `pa.Table` matching `SCHEMA` — `dedup_by_key` runs source-side, last-write-wins on `patient_id`.
-# 4. `platform.write_silver("patient", table, mode="merge")` — first run does OVERWRITE+CDC; subsequent runs MERGE on `patient_id`. If target somehow has dups (legacy data), the ADR-019 guard rewrites the deduped target before the MERGE.
+# `read_fhir_bundles_distributed` calls `spark.read.text(wholetext=True)` which
+# reads each `.json` file as one row of a partitioned Spark DataFrame. Columns:
+# `path` (input file URI), `value` (raw JSON text).
+#
+# Spark decides partition count from file sizes by default; override
+# `num_partitions=N` if you want to force higher parallelism (e.g. on a larger
+# cohort where the default is too coarse).
 
 # METADATA ********************
 
@@ -100,23 +119,82 @@ print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primar
 
 # CELL ********************
 
-parser = FHIRBundleParser()
-records: list[dict] = []
-n_bundles = 0
-for path, bundle in platform.iter_bronze_files():
-    n_bundles += 1
-    parsed = parser.parse_bundle(bundle)
-    src = path.rsplit("/", 1)[-1]
-    for r in parsed.get(TABLE, []):
-        r["source_file"] = src
-        records.append(r)
-print(f"Bundles read: {n_bundles} · {TABLE} records parsed: {len(records):,}")
+fhir_root = platform.storage_path("bronze", "fhir")
+bundles_df = read_fhir_bundles_distributed(spark, fhir_root)
+print(f"Bundles read: {bundles_df.count():,}  ·  partitions: {bundles_df.rdd.getNumPartitions()}")
+bundles_df.printSchema()
 
-table = spec.build(records, ingest_ts)
-print(f"Built {TABLE} table: {table.num_rows:,} rows, {len(table.schema)} columns")
+# METADATA ********************
 
-platform.write_silver(TABLE, table, mode="merge")
-print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 2 — Parse + build Silver via `applyInPandas` (distributed)
+#
+# `make_partition_parser` returns a function that:
+# 1. Receives one Spark partition as `pd.DataFrame(path, value)`
+# 2. JSON-parses each bundle with the pure-Python `FHIRBundleParser`
+# 3. Extracts `patient` records, stamps `source_file = path.basename`
+# 4. Calls `spec.build(records, ingest_ts)` (= `build_silver_patient`) to
+#    produce the typed `pa.Table` — same builder LocalLite uses (ADR-002)
+# 5. Returns `to_pandas()` for Spark to consume
+#
+# Spark runs this on every executor in parallel; the output schema is derived
+# from the canonical `spec.schema` via `pa_to_spark_schema`.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+from pyspark.sql import functions as F  # noqa: N812
+
+parse_udf = make_partition_parser(TABLE, spec.build, ingest_ts)
+spark_schema = pa_to_spark_schema(spec.schema)
+
+silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
+    parse_udf, schema=spark_schema
+)
+print(f"silver.{TABLE} planned schema: {len(spark_schema.fields)} columns")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 3 — Spark-native Delta MERGE (CDC + ADR-019 guard)
+#
+# `platform.write_silver_spark` writes the Spark DataFrame directly to OneLake
+# Delta using a native `DeltaTable.merge()` — no driver-side pa.Table conversion.
+# The ADR-019 target dedup guard runs server-side: if the existing table has
+# duplicate primary keys, it's rewritten deduped before the MERGE, then the
+# MERGE applies the new data on top.
+#
+# First run = CREATE + CDC enabled. Subsequent runs = MERGE on `patient_id`.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+platform.write_silver_spark(TABLE, silver_df, mode="merge")
+print(f"Wrote silver.{TABLE} (Spark-native MERGE, CDC on)")
 
 # METADATA ********************
 
@@ -129,7 +207,9 @@ print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
 
 # ## Validation
 #
-# Read the table back via Spark, assert minimum row count, display a sample. The minimum is intentionally low (1) — this notebook is a unit check; full corpus-wide validation lives in `08_silver_validation` which runs the schema-registry rule set via `core.validation.validate_table` and writes outcomes to `silver.ingest_log`.
+# Read back via Spark, assert minimum row count, show a sample. Full
+# rule-based validation lives in `08_silver_validation` which logs every
+# rule outcome to `silver.ingest_log`.
 
 # METADATA ********************
 
@@ -140,14 +220,11 @@ print(f"Wrote silver.{TABLE} to OneLake (mode=merge, CDC on)")
 
 # CELL ********************
 
-from pyspark.sql import SparkSession
-
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-df = spark.read.format("delta").load(platform.storage_path("silver", TABLE))
-count = df.count()
+written = platform.read_silver_spark(TABLE)
+count = written.count()
 print(f"silver.{TABLE} row count: {count:,}")
 assert count >= MIN_ROWS, f"Row count {count} below minimum {MIN_ROWS}"
-display(df.limit(5))
+display(written.limit(5))
 
 # METADATA ********************
 
@@ -158,9 +235,8 @@ display(df.limit(5))
 
 # CELL ********************
 
-# Per-notebook quick metric — full ingest_log is written by 08_silver_validation.
 platform.log_metric(TABLE, "row_count", count)
-print(f"02_silver_patient complete — next: 03_silver_encounter")
+print("02_silver_patient complete — next: 03_silver_encounter")
 
 # METADATA ********************
 

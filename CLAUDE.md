@@ -76,7 +76,8 @@ it belongs in CHANGELOG.
   core/surfaces/cli/pipeline.py              Local Bronze → Silver → Gold CLI orchestration
   core/redaction.py                          PHI-safe log references (ADR-010)
   fabric/platform.py                         FabricPlatform (consumes core via wheel)
-  fabric/notebooks/                          Fabric execution notebooks (00–10)
+  fabric/notebooks/                          Fabric execution notebooks (00–10, .Notebook/ format only — ADR-021)
+  fabric/spark_helpers.py                    Spark distribution helpers (ADR-020): pa→Spark schema, applyInPandas parser factory
   fabric/deploy/                             fabric-cicd config + wheel upload helpers
   .github/workflows/                         core-build · core-pr-tests · fabric-deploy
 

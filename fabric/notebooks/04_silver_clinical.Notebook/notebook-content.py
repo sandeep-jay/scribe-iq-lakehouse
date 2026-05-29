@@ -12,21 +12,19 @@
 
 # # 04 — Silver: clinical (condition + observation + medication_request + procedure)
 #
-# **Purpose.** Build the four core *clinical* Silver tables in one notebook so the FHIR parser runs once per bundle instead of four times.
+# **Purpose.** Build the four core clinical Silver tables. Bundles read once
+# into a cached distributed Spark DataFrame; 4 `applyInPandas` pipelines run
+# parse + build for each table in parallel across executors.
 #
-# **Inputs.** `Files/bronze/fhir/cohort=*/*.json`.
-#
-# **Outputs.** Four Delta tables under `Tables/silver/` — `condition`, `observation`, `medication_request`, `procedure`. All CDC enabled, MERGE-upserted on their respective primary keys.
+# **Outputs.** Four Delta tables under `Tables/silver/`. MERGE on PK, CDC on.
 #
 # **Expected scale (full Coherent):**
-# - `condition`: ~16,000 rows
-# - `observation`: ~670,000 rows *(largest table — vitals, labs, social factors)*
-# - `medication_request`: ~209,000 rows
-# - `procedure`: ~56,000 rows
+# - `condition` ~16,000 rows
+# - `observation` ~670,000 rows (largest table)
+# - `medication_request` ~209,000 rows
+# - `procedure` ~56,000 rows
 #
-# **Dependencies.** Same as 02/03.
-#
-# Screenshot the 4-table validation summary cell as `04_silver_clinical.png`.
+# Screenshot the per-table summary in Cell 15 as `04_silver_clinical.png`.
 
 # METADATA ********************
 
@@ -39,12 +37,14 @@
 
 # ## Architecture context
 #
-# - **Parse-once optimization:** all four extractors live in `core.transforms.silver_clinical`; the parser walks each bundle once and emits four record streams in a single pass. The local CLI uses the same shape (see `core.surfaces.cli.pipeline._parse_cohort`).
-# - **[ADR-008](../../docs/adr/008-dict-based-fhir-parsing.md)** — dict-based parsing, `.get()` with defaults everywhere; Synthea Coherent has optional fields throughout.
-# - **Clinical-code rule** (healthcare-data skill) — SNOMED / LOINC / ICD codes stored as `str`, never cast to int (preserves leading zeros + special chars like `E11.9`).
-# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** — each MERGE has the target-dedup guard; re-runs are idempotent.
-#
-# Follows the 8-cell template (cells 5 and 7 each iterate across the 4 tables).
+# - **Read-once, parse-4-times trade:** `bundles_df.cache()` keeps bundles
+#   in executor memory after the first action so the 4 subsequent
+#   `applyInPandas` passes don't re-read OneLake. The parser is cheap
+#   (~few ms/bundle); 4× parse cost is small vs the cost of avoiding it.
+#   Documented in ADR-020.
+# - **Clinical-code rule:** SNOMED / LOINC / ICD as `str`, never `int`.
+# - **[ADR-019](../../docs/adr/019-silver-merge-idempotency.md)** dedup guard
+#   per-table inside `write_silver_spark`.
 
 # METADATA ********************
 
@@ -61,16 +61,21 @@ from datetime import UTC, datetime
 os.environ["LAKEHOUSE_PLATFORM"] = "fabric"
 
 from core.platform.factory import get_platform
-from core.transforms.fhir_parser import FHIRBundleParser
 from core.transforms.registry import SILVER_TABLES
+from fabric.spark_helpers import (
+    make_partition_parser,
+    pa_to_spark_schema,
+    read_fhir_bundles_distributed,
+)
 
 CLINICAL_TABLES = ("condition", "observation", "medication_request", "procedure")
 MIN_ROWS = {"condition": 1, "observation": 10, "medication_request": 1, "procedure": 1}
 
 platform = get_platform()
+spark = platform.get_spark_session()
 ingest_ts = datetime.now(UTC)
 for t in CLINICAL_TABLES:
-    print(f"  {t:<20s} PK={SILVER_TABLES[t].primary_key}")
+    print(f"  {t:<22s} PK={SILVER_TABLES[t].primary_key}")
 
 # METADATA ********************
 
@@ -81,13 +86,11 @@ for t in CLINICAL_TABLES:
 
 # MARKDOWN ********************
 
-# ## Transform approach
+# ## Step 1 — Read FHIR bundles once + cache
 #
-# 1. Read every bundle once via `platform.read_bronze_fhir()`.
-# 2. Parse each bundle once; accumulate records into a `{table_name → list[dict]}` map (parse-once pattern from the CLI).
-# 3. For each of the four clinical tables: build the typed `pa.Table` via the registry's `spec.build`, then MERGE-upsert via `platform.write_silver(name, table, mode="merge")`.
-#
-# Cell 5 prints per-table record counts so a parse-only failure (zero records for a table) is visible before the MERGE.
+# Bundles cached in executor memory so the 4 subsequent applyInPandas passes
+# don't re-read OneLake. For full scale-out (much larger cohort), swap
+# `cache()` for `persist(StorageLevel.MEMORY_AND_DISK)`.
 
 # METADATA ********************
 
@@ -98,27 +101,50 @@ for t in CLINICAL_TABLES:
 
 # CELL ********************
 
-parser = FHIRBundleParser()
-accumulated: dict[str, list[dict]] = {t: [] for t in CLINICAL_TABLES}
-n_bundles = 0
-for path, bundle in platform.iter_bronze_files():
-    n_bundles += 1
-    parsed = parser.parse_bundle(bundle)
-    src = path.rsplit("/", 1)[-1]
-    for t in CLINICAL_TABLES:
-        for r in parsed.get(t, []):
-            r["source_file"] = src
-            accumulated[t].append(r)
-print(f"Bundles read: {n_bundles}")
+from pyspark.sql import functions as F  # noqa: N812
 
-for t in CLINICAL_TABLES:
-    print(f"  {t:<20s} records parsed: {len(accumulated[t]):>8,}")
+fhir_root = platform.storage_path("bronze", "fhir")
+bundles_df = read_fhir_bundles_distributed(spark, fhir_root).cache()
+n_bundles = bundles_df.count()
+print(f"Bundles cached: {n_bundles:,}  ·  partitions: {bundles_df.rdd.getNumPartitions()}")
 
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Step 2 — Per-table distributed parse + Spark-native MERGE
+#
+# For each clinical table: build the `applyInPandas` UDF + Spark schema,
+# distribute the parse, write via Spark MERGE.
+
+# METADATA ********************
+
+# META {
+# META   "language": "markdown",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+per_table_counts = []
 for t in CLINICAL_TABLES:
     spec = SILVER_TABLES[t]
-    table = spec.build(accumulated[t], ingest_ts)
-    platform.write_silver(t, table, mode="merge")
-    print(f"  silver.{t:<20s} rows={table.num_rows:>8,}  (mode=merge, CDC on)")
+    parse_udf = make_partition_parser(t, spec.build, ingest_ts)
+    spark_schema = pa_to_spark_schema(spec.schema)
+    silver_df = bundles_df.groupBy(F.spark_partition_id()).applyInPandas(
+        parse_udf, schema=spark_schema
+    )
+    platform.write_silver_spark(t, silver_df, mode="merge")
+    n = platform.read_silver_spark(t).count()
+    per_table_counts.append((t, n))
+    print(f"  silver.{t:<22s} rows={n:>8,}  (MERGE, CDC on)")
+
+bundles_df.unpersist()
 
 # METADATA ********************
 
@@ -131,7 +157,7 @@ for t in CLINICAL_TABLES:
 
 # ## Validation
 #
-# Read each of the 4 tables back via Spark, assert minimum row counts, display a summary table + one sample row per table. Full validation in `08_silver_validation`.
+# Per-table assertions + summary table + 3 sample rows per table.
 
 # METADATA ********************
 
@@ -142,21 +168,19 @@ for t in CLINICAL_TABLES:
 
 # CELL ********************
 
-from pyspark.sql import SparkSession
-
-spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-
 summary_rows = []
-for t in CLINICAL_TABLES:
-    df = spark.read.format("delta").load(platform.storage_path("silver", t))
-    n = df.count()
+for t, n in per_table_counts:
     assert n >= MIN_ROWS[t], f"silver.{t} rows {n} below minimum {MIN_ROWS[t]}"
     summary_rows.append((t, n, SILVER_TABLES[t].primary_key))
-    print(f"\n--- silver.{t} (rows={n:,}) ---")
-    display(df.limit(3))
 
-summary_df = spark.createDataFrame(summary_rows, schema="table STRING, row_count BIGINT, primary_key STRING")
+summary_df = spark.createDataFrame(
+    summary_rows, schema="table STRING, row_count BIGINT, primary_key STRING"
+)
 display(summary_df)
+
+for t, _ in per_table_counts:
+    print(f"\n--- silver.{t} (sample) ---")
+    display(platform.read_silver_spark(t).limit(3))
 
 # METADATA ********************
 
@@ -167,7 +191,7 @@ display(summary_df)
 
 # CELL ********************
 
-for t, n, _ in summary_rows:
+for t, n in per_table_counts:
     platform.log_metric(t, "row_count", n)
 print("04_silver_clinical complete — next: 05_silver_soap_notes (demo centerpiece)")
 
