@@ -1,55 +1,53 @@
-# HANDOFF — Session 5 · Fabric end-to-end + dedup fix + Power BI
-**Date:** 2026-05-28 · **Branch:** `main` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
+# HANDOFF — Session 5 · Fabric Spark-native rewrite (ADR-022)
+**Date:** 2026-05-29 · **Branch:** `feat/fabric-spark-native` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
 
 > State only. For what happened in this (or any prior) session see [CHANGELOG.md](CHANGELOG.md).
 > Narrative belongs there, not here.
 
 ## Current state
 
-Phases 1–3 of the Fabric execution plan are committed (`8e11bb6` dedup fix +
-ADR-019, `bfec591` FabricPlatform real impl + REST upload, `7d1d6bf` DEPLOYMENT
-runbook + .env machinery, `5e70947` notebook 00_setup, `5c29bb7` HANDOFF/
-CHANGELOG sync). The Fabric workspace `scribe_iq_lakehouse_fabric` is
-provisioned (lakehouse + Environment `scribe-iq-lakehouse-env` with the core
-wheel + 4 PyPI deps published); 128 tests + 1 skipped (`@pytest.mark.fabric`).
-Phase 4 is paused on a two-step user unblock: no `origin` git remote
-configured, and Fabric Git Integration not wired — both are needed before
-`fabric/notebooks/00_setup.ipynb` can run in the workspace.
+Branch `feat/fabric-spark-native` is 7 commits ahead of `main` and contains
+the full pure-Spark Fabric rewrite per ADR-022: `fabric/transforms/`
+(bundle_schema + 10 Spark-native Silver builders + registry),
+`fabric/gold/` (Spark-native encounter_summary + corpus_manifest),
+`fabric/validation/` (single-`.agg()`-per-table), slimmed
+`fabric/platform.py` (Spark-only, no PyArrow wrappers, no ABC inheritance),
+deleted `fabric/spark_helpers.py`, rewritten notebooks 00 + 02–10, ADRs
+002/004/020 archived under `docs/_archive/adr/` with `ADR-022` adopted, and
+CLAUDE.md / `.claude/rules/` updated. Tests pass: 128 passed + 1 skipped
+(workspace-only). Branch is unpushed; user explicitly held PR opening for
+review.
 
 ## Next task
 
-**Wire `origin` + Fabric Git Integration so notebook 00 can run.**
+**User review of branch `feat/fabric-spark-native`, then push + open PR.**
 
 ```bash
-# 1. Add the GitHub remote (create the repo on GitHub first; private is fine).
-git remote add origin git@github.com:<your-user>/scribe-iq-lakehouse.git
-git push -u origin main
-
-# 2. In Fabric: Workspace settings → Git integration → Connect
-#    repo: <your-user>/scribe-iq-lakehouse
-#    branch: main
-#    folder: /fabric/notebooks
-#    direction: Bidirectional
-
-# 3. Open 00_setup in the workspace → attach lakehouse + env via top bar →
-#    Run all cells → screenshot the display() cell as
-#    fabric/docs/screenshots/00_workspace_overview.png
+git log --oneline main..feat/fabric-spark-native   # 7 commits to review
+git diff main..feat/fabric-spark-native -- fabric/ docs/adr/ CLAUDE.md
+# After approval:
+git push -u origin feat/fabric-spark-native
+gh pr create --title "Fabric Spark-native rewrite (ADR-022)" --body "..."
 ```
 
-Detailed walkthrough + gotchas: [fabric/docs/DEPLOYMENT.md](fabric/docs/DEPLOYMENT.md) Step 6.
+The first cloud-side smoke after merge is `00_setup` in the Fabric
+workspace, then 02 (smallest table — fast feedback on the Spark
+`from_json` path before running 04/05 which fan out to more tables).
 
 ## Open decisions
 
 | Decision | Options | Owner | Due |
 |---|---|---|---|
+| Coherent ingest scope for `01_bronze_ingest` | Full ~1,278 patients (~10 min, ~14 GB OneLake) / Stratified ~200 patients (~1 min) | User + Claude | Before authoring 01 |
 | Service Principal registration | Skip (manual UI uploads forever) / Register (enables REST + CI) | User | Before 3rd wheel re-upload becomes annoying |
-| Coherent ingest scope in 01_bronze_ingest | Full 1,278 patients (~10 min, ~14 GB OneLake) / Stratified sample (~200 patients, ~1 min) | User + Claude | Before authoring 01 |
 
 ## Blockers / waiting-on
 
-- **`git remote add origin`** — no GitHub remote configured; Fabric Git Integration cannot connect until this is done. User action.
-- **First green run of `00_setup.ipynb` in Fabric** — pending Git Integration; will reveal any `FabricPlatform` adjustments before notebook 01 is authored.
+- **User review of `feat/fabric-spark-native`** before PR is opened
+  (explicit instruction: *"don't push a PR without my say so"*).
 
 ## First task for next session
 
-Run `00_setup.ipynb` in the Fabric workspace (after git remote + Git Integration are wired); if all 4 gates pass, ping me to author `01_bronze_ingest.ipynb`. If any gate fails, paste the failing cell's stack trace and which gate.
+After PR merges, run `00_setup` in the Fabric workspace; if all 4 gates
+pass, smoke-run notebook 02 against a small cohort to verify the Spark
+`from_json + BUNDLE_SCHEMA` path produces non-empty `silver.patient`.
