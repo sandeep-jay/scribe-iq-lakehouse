@@ -1,29 +1,22 @@
-"""FabricPlatform — Microsoft Fabric implementation of LakehousePlatform.
+"""FabricPlatform — Microsoft Fabric OneLake + Spark storage adapter.
 
-Bronze/Silver/Gold live in a OneLake-backed Lakehouse; Spark via the attached
-session; ingest_log and metrics emitted through the same interface used by
-LocalLitePlatform so transforms and the Dagster asset graph remain unchanged.
+Pure-Spark, pure-Fabric. No PyArrow round-trips, no ``core.platform`` ABC,
+no shared registry — fabric/ is an independent end-to-end implementation
+(ADR-022). Bronze lives under ``Files/bronze/...``; Silver and Gold are
+Delta tables under ``Tables/silver/...`` and ``Tables/gold/...`` of a
+schema-enabled Lakehouse.
 
-Spark, ``delta-spark``, and ``notebookutils.mssparkutils`` are imported lazily
-inside the methods that need them. This keeps the module importable in any
-environment (CI, local dev without Fabric, offline contract tests) — only
-calling a method that actually needs Spark forces the import.
-
-Storage layout assumes a **schema-enabled** Lakehouse (Fabric default for new
-Lakehouses since 2024):
-
-    Tables/<layer>/<table>      Delta tables (silver, gold)
-    Files/bronze/fhir/...       Raw FHIR JSON
-    Files/gold/_metadata/...    Corpus manifest
+All Spark / ``delta-spark`` / ``notebookutils.mssparkutils`` imports are
+deferred to method-call time so this module imports cleanly outside a Fabric
+runtime (CI, local contract tests).
 
 See:
-    - ADR-001 (Fabric-first)
-    - ADR-002 (platform abstraction)
-    - ADR-009 (Delta + CDC contract)
-    - ADR-017 (multi-platform repo layout)
-    - ADR-018 (CI/CD monorepo)
-    - ADR-019 (Silver MERGE idempotency — target-dedup guard)
-    - docs/roadmap/fabric-execution-plan.md (Phase 2 — this module)
+    - ADR-001  (Fabric-first)
+    - ADR-009  (Delta + CDC contract)
+    - ADR-017  (multi-platform repo layout)
+    - ADR-018  (CI/CD monorepo)
+    - ADR-019  (Silver MERGE idempotency — target-dedup guard)
+    - ADR-022  (independent per-platform implementations)
     - fabric/docs/DEPLOYMENT.md
 """
 
@@ -31,24 +24,24 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
-from core.platform.base import LakehousePlatform
-from core.transforms.registry import SILVER_PRIMARY_KEYS
+if TYPE_CHECKING:
+    from pyspark.sql import DataFrame, SparkSession
 
 logger = logging.getLogger(__name__)
 
 _CDC_PROPERTY = "delta.enableChangeDataFeed"
 _ONELAKE_HOST = "onelake.dfs.fabric.microsoft.com"
+_VALID_LAYERS = {"bronze", "silver", "gold"}
 
 
-class FabricPlatform(LakehousePlatform):
+class FabricPlatform:
     """Microsoft Fabric platform — OneLake Delta + Fabric Spark session.
 
-    All Spark/notebookutils interactions are deferred to method call time so this
-    class can be imported (and its contract verified) outside a Fabric runtime.
+    All methods accept / return Spark DataFrames. There is no ``pa.Table``
+    interchange on this platform; the Fabric tier builds and writes Delta
+    natively end-to-end.
     """
 
     name = "fabric"
@@ -59,16 +52,6 @@ class FabricPlatform(LakehousePlatform):
         lakehouse_name: str | None = None,
         spark: Any | None = None,
     ) -> None:
-        """Initialize with optional overrides for testability.
-
-        Args:
-            workspace_id: Fabric workspace GUID. Falls back to
-                ``mssparkutils.env.getWorkspaceId()`` on first method call.
-            lakehouse_name: Lakehouse name (e.g. ``"scribe_iq"``). Falls back to
-                the attached Lakehouse via ``mssparkutils.lakehouse.get()``.
-            spark: Pre-existing ``SparkSession``. Falls back to the Fabric-injected
-                global ``spark`` on first method call.
-        """
         self._workspace_id = workspace_id
         self._lakehouse_name = lakehouse_name
         self._spark = spark
@@ -76,32 +59,25 @@ class FabricPlatform(LakehousePlatform):
     # ------------------------------------------------------- lazy environment
 
     def ensure_env(self) -> tuple[str, str]:
-        """Resolve workspace + lakehouse names from mssparkutils on first call.
-
-        Public — notebooks need this to construct ad-hoc paths (e.g. the corpus
-        manifest path in ``10_gold_validation``) without re-implementing the
-        env resolution.
-        """
+        """Resolve workspace + lakehouse names from ``mssparkutils`` on first call."""
         if self._workspace_id is None or self._lakehouse_name is None:
             try:
                 import notebookutils.mssparkutils as msu
             except ImportError as exc:
-                raise RuntimeError(
+                msg = (
                     "FabricPlatform needs workspace_id + lakehouse_name; pass them "
                     "explicitly or run inside a Fabric notebook where "
                     "notebookutils.mssparkutils is available."
-                ) from exc
+                )
+                raise RuntimeError(msg) from exc
             if self._workspace_id is None:
                 self._workspace_id = msu.env.getWorkspaceId()
             if self._lakehouse_name is None:
                 self._lakehouse_name = msu.lakehouse.get()["displayName"]
         return self._workspace_id, self._lakehouse_name
 
-    # Backward-compat alias — kept so existing internal callers don't break.
-    _ensure_env = ensure_env
-
-    def get_spark_session(self) -> Any | None:
-        """Return the attached Fabric SparkSession (injected as global ``spark``)."""
+    def get_spark_session(self) -> SparkSession | None:
+        """Return the attached Fabric ``SparkSession`` (injected as global ``spark``)."""
         if self._spark is not None:
             return self._spark
         try:
@@ -114,9 +90,11 @@ class FabricPlatform(LakehousePlatform):
     # ----------------------------------------------------------------- paths
 
     def storage_path(self, layer: str, table: str) -> str:
-        """Return the OneLake abfss URI for a Delta table or raw-file root."""
-        self._validate_layer(layer)
-        workspace_id, lakehouse_name = self._ensure_env()
+        """Return the OneLake ``abfss://`` URI for a Delta table or raw-file root."""
+        if layer not in _VALID_LAYERS:
+            msg = f"Invalid layer {layer!r}; expected one of {sorted(_VALID_LAYERS)}"
+            raise ValueError(msg)
+        workspace_id, lakehouse_name = self.ensure_env()
         base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
         if layer == "bronze":
             return f"{base}/Files/bronze/{table}"
@@ -124,21 +102,62 @@ class FabricPlatform(LakehousePlatform):
 
     # ----------------------------------------------------------------- bronze
 
-    def read_bronze_fhir(self, cohort: str | None = None) -> list[dict]:
-        """Read FHIR bundles from ``Files/bronze/fhir/cohort=*/*.json``."""
-        return [bundle for _path, bundle in self.iter_bronze_files(cohort=cohort)]
+    def read_bronze_bundles_spark(
+        self,
+        cohort: str | None = None,
+        *,
+        num_partitions: int | None = None,
+    ) -> DataFrame:
+        """Read FHIR bundles under ``Files/bronze/fhir/cohort=*`` as a Spark DataFrame.
+
+        Returns a DataFrame with two columns:
+            ``path``   — input file URI (one row per bundle)
+            ``value``  — raw JSON text of the bundle
+
+        Partitioned across executors so the downstream Spark transforms parse
+        and project distributed — no ``applyInPandas`` bridge, no driver-side
+        Python loop. This is the canonical Bronze entry point for every
+        Spark-native Silver build on Fabric.
+
+        Args:
+            cohort: Optional cohort name. If provided, only that cohort's
+                bundles are read (``cohort=<name>/*.json``). If omitted, every
+                cohort under ``Files/bronze/fhir/`` is read.
+            num_partitions: Override Spark's default partition count for the
+                read — useful when executor count is high or bundles are
+                imbalanced.
+        """
+        from pyspark.sql import functions as F  # noqa: N812
+
+        spark = self.get_spark_session()
+        if spark is None:
+            msg = "read_bronze_bundles_spark requires an active SparkSession"
+            raise RuntimeError(msg)
+
+        fhir_root = self.storage_path("bronze", "fhir")
+        pattern = f"{fhir_root}/cohort={cohort}/*.json" if cohort else f"{fhir_root}/cohort=*/*.json"
+        df = (
+            spark.read.text(pattern, wholetext=True)
+            .withColumn("path", F.input_file_name())
+            .select("path", "value")
+        )
+        if num_partitions is not None:
+            df = df.repartition(num_partitions)
+        return df
 
     def iter_bronze_files(self, cohort: str | None = None):
-        """Yield ``(path, bundle_dict)`` pairs from ``Files/bronze/fhir/cohort=*/``.
+        """Yield ``(path, bundle_dict)`` pairs for small-scale notebook use.
 
-        Mirrors :meth:`core.platform.local_lite.LocalLitePlatform.iter_bronze_files`.
-        Notebooks use this to stamp ``source_file`` on each parsed record for
-        provenance (the CLI pipeline does the equivalent in ``_parse_cohort``).
+        Driver-side iteration via ``mssparkutils.fs.head`` — fine for
+        validation / smoke notebooks (e.g. ``00_setup``, ``10_gold_validation``)
+        but not for medallion builds. The distributed Silver builds consume
+        :meth:`read_bronze_bundles_spark` instead.
         """
         try:
             import notebookutils.mssparkutils as msu
         except ImportError as exc:
-            raise RuntimeError("iter_bronze_files requires Fabric runtime") from exc
+            msg = "iter_bronze_files requires Fabric runtime"
+            raise RuntimeError(msg) from exc
 
         fhir_root = self.storage_path("bronze", "fhir")
         pattern_dir = f"{fhir_root}/cohort={cohort}" if cohort else fhir_root
@@ -151,7 +170,6 @@ class FabricPlatform(LakehousePlatform):
 
     @staticmethod
     def _walk_json(msu: Any, root: str, *, recurse: bool) -> list[str]:
-        """Yield .json paths under ``root``; one cohort deep when ``recurse=True``."""
         out: list[str] = []
         for entry in msu.fs.ls(root):
             if entry.isDir and recurse:
@@ -162,74 +180,36 @@ class FabricPlatform(LakehousePlatform):
 
     # ----------------------------------------------------------- silver/gold
 
-    def write_silver(self, table: str, data: pa.Table, mode: str = "merge") -> None:
-        """Upsert/append/overwrite a Silver Delta table from a ``pa.Table``.
-
-        Convenience wrapper: converts to a Spark DataFrame via pandas, then
-        defers to :meth:`write_silver_spark`. Used by LocalLite-style callers
-        (CLI pipeline) that already have a ``pa.Table``. For native Fabric
-        notebooks that build Spark DataFrames directly, prefer
-        :meth:`write_silver_spark` — skips the pa↔pandas round-trip and
-        scales beyond driver memory.
-        """
-        spark = self.get_spark_session()
-        if spark is None:
-            raise RuntimeError("write_silver requires an active SparkSession")
-        df = spark.createDataFrame(data.to_pandas())
-        self.write_silver_spark(table, df, mode=mode)
-
-    def write_silver_spark(self, table: str, df: Any, mode: str = "merge") -> None:
-        """Native-Spark write of a Silver Delta table from a Spark DataFrame.
-
-        This is the Fabric-idiomatic write path used by the distributed
-        notebooks (ADR-020). Applies the same ADR-019 target-side dedup guard
-        before MERGE that the pa.Table path does.
+    def write_silver_spark(self, table: str, df: DataFrame, mode: str = "merge") -> None:
+        """Upsert / append / overwrite a Silver Delta table from a Spark DataFrame.
 
         Args:
-            table: Silver table name (registry key).
-            df: Spark DataFrame matching ``SILVER_TABLES[table].schema``.
+            table: Silver table name (registry key — see
+                :mod:`fabric.transforms.registry`).
+            df: Spark DataFrame matching ``REGISTRY[table].schema``.
             mode: ``"merge"`` (upsert on primary key), ``"append"``, or
                 ``"overwrite"``.
         """
         self._write_delta_spark(self.storage_path("silver", table), df, mode, table)
 
-    def read_silver(self, table: str) -> pa.Table:
-        """Read a Silver Delta table as ``pa.Table`` (driver-side; small tables only).
-
-        For large tables or any distributed downstream work, prefer
-        :meth:`read_silver_spark` — keeps data in Spark, avoids the
-        driver-memory bottleneck of ``.toPandas()``.
-        """
-        return pa.Table.from_pandas(self.read_silver_spark(table).toPandas())
-
-    def read_silver_spark(self, table: str) -> Any:
+    def read_silver_spark(self, table: str) -> DataFrame:
         """Read a Silver Delta table as a Spark DataFrame (distributed)."""
         spark = self.get_spark_session()
         if spark is None:
-            raise RuntimeError("read_silver_spark requires an active SparkSession")
+            msg = "read_silver_spark requires an active SparkSession"
+            raise RuntimeError(msg)
         return spark.read.format("delta").load(self.storage_path("silver", table))
 
-    def write_gold(self, table: str, data: pa.Table) -> None:
-        """Overwrite a Gold Delta table from a ``pa.Table``.
-
-        Convenience wrapper for the pa.Table callers; see
-        :meth:`write_gold_spark` for the Spark-native path.
-        """
-        spark = self.get_spark_session()
-        if spark is None:
-            raise RuntimeError("write_gold requires an active SparkSession")
-        df = spark.createDataFrame(data.to_pandas())
-        self.write_gold_spark(table, df)
-
-    def write_gold_spark(self, table: str, df: Any) -> None:
-        """Native-Spark overwrite of a Gold Delta table from a Spark DataFrame."""
+    def write_gold_spark(self, table: str, df: DataFrame) -> None:
+        """Overwrite a Gold Delta table from a Spark DataFrame."""
         self._write_delta_spark(self.storage_path("gold", table), df, "overwrite", table)
 
-    def read_gold_spark(self, table: str) -> Any:
+    def read_gold_spark(self, table: str) -> DataFrame:
         """Read a Gold Delta table as a Spark DataFrame (distributed)."""
         spark = self.get_spark_session()
         if spark is None:
-            raise RuntimeError("read_gold_spark requires an active SparkSession")
+            msg = "read_gold_spark requires an active SparkSession"
+            raise RuntimeError(msg)
         return spark.read.format("delta").load(self.storage_path("gold", table))
 
     def table_version(self, layer: str, table: str) -> int | None:
@@ -244,49 +224,55 @@ class FabricPlatform(LakehousePlatform):
         try:
             dt = SparkDeltaTable.forPath(spark, self.storage_path(layer, table))
             row = dt.history(1).first()
-            return int(row["version"]) if row is not None else None
         except Exception as err:  # noqa: BLE001 - any Delta error means "no version"
             logger.debug("table_version lookup failed for %s.%s: %s", layer, table, err)
             return None
+        return int(row["version"]) if row is not None else None
 
     def write_gold_manifest(self, manifest: dict) -> None:
-        """Write corpus manifest JSON to ``Files/gold/_metadata/corpus_manifest.json``."""
+        """Write the corpus manifest JSON to ``Files/gold/_metadata/``."""
         try:
             import notebookutils.mssparkutils as msu
         except ImportError as exc:
-            raise RuntimeError("write_gold_manifest requires Fabric runtime") from exc
-        workspace_id, lakehouse_name = self._ensure_env()
+            msg = "write_gold_manifest requires Fabric runtime"
+            raise RuntimeError(msg) from exc
+        workspace_id, lakehouse_name = self.ensure_env()
         base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
         path = f"{base}/Files/gold/_metadata/corpus_manifest.json"
         msu.fs.put(path, json.dumps(manifest, indent=2), True)  # overwrite=True
 
     # ----------------------------------------------------------- write helper
 
-    def _write_delta_spark(self, path: str, df: Any, mode: str, table: str) -> None:
+    def _write_delta_spark(self, path: str, df: DataFrame, mode: str, table: str) -> None:
         """Create-or-upsert a Delta table at ``path`` from a Spark DataFrame.
 
-        Single internal write path. Both the pa.Table-flavoured wrappers
-        (:meth:`write_silver`, :meth:`write_gold`) and the Spark-native
-        wrappers (:meth:`write_silver_spark`, :meth:`write_gold_spark`)
-        ultimately call here. Mirrors :meth:`LocalLitePlatform._write_delta`,
-        including the ADR-019 target-side dedup guard before MERGE.
+        Implements the ADR-019 target-side dedup guard before MERGE: a target
+        table with duplicate primary keys (left over from an earlier bug or
+        a manual write) is rewritten deduped before the MERGE so the merge
+        condition stays single-row-per-key.
         """
         spark = self.get_spark_session()
         if spark is None:
-            raise RuntimeError(f"_write_delta_spark on {path!r} requires an active SparkSession")
+            msg = f"_write_delta_spark on {path!r} requires an active SparkSession"
+            raise RuntimeError(msg)
 
         from delta.tables import DeltaTable as SparkDeltaTable
 
         exists = SparkDeltaTable.isDeltaTable(spark, path)
 
         if mode == "merge" and exists:
-            key = SILVER_PRIMARY_KEYS.get(table)
-            if key is None:
-                raise ValueError(f"No primary key registered for table {table!r}; cannot merge")
+            # Deferred: importing the registry pulls in fabric.transforms.silver_*,
+            # which require pyspark — fine here (we're already inside a write
+            # path that needs Spark) but would break offline importability if
+            # placed at module top-level.
+            from fabric.transforms.registry import REGISTRY as SILVER_REGISTRY
 
-            # ADR-019: target-side dedup guard. Spark equivalent of the LocalLite
-            # pyarrow path — count distinct PKs vs total rows, rewrite deduped
-            # only if dups exist.
+            entry = SILVER_REGISTRY.get(table)
+            if entry is None:
+                msg = f"No primary key registered for table {table!r}; cannot merge"
+                raise ValueError(msg)
+            key = entry.primary_key
+
             target_df = spark.read.format("delta").load(path)
             total = target_df.count()
             distinct = target_df.select(key).distinct().count()
@@ -315,18 +301,8 @@ class FabricPlatform(LakehousePlatform):
             )
             return
 
-        # First write or explicit overwrite/append: create with CDC enabled.
         write_mode = "append" if (mode == "append" and exists) else "overwrite"
         df.write.format("delta").mode(write_mode).option(_CDC_PROPERTY, "true").save(path)
-
-    # Backward-compat — old internal callers expected _write_delta(pa.Table).
-    def _write_delta(self, path: str, data: pa.Table, mode: str, table: str) -> None:
-        """Legacy pa.Table internal write path; converts then delegates to Spark."""
-        spark = self.get_spark_session()
-        if spark is None:
-            raise RuntimeError(f"_write_delta on {path!r} requires an active SparkSession")
-        df = spark.createDataFrame(data.to_pandas())
-        self._write_delta_spark(path, df, mode, table)
 
     # --------------------------------------------------------- observability
 
@@ -343,4 +319,5 @@ class FabricPlatform(LakehousePlatform):
             message,
         )
         if severity == "critical":
-            raise RuntimeError(f"Critical alert: {message}")
+            msg = f"Critical alert: {message}"
+            raise RuntimeError(msg)
