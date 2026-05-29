@@ -87,6 +87,7 @@ SAMPLE_SIZE: int | None = 100  # set to None for the full ~1,278 corpus
 # ---------------------------------------------------------------------------
 
 platform = FabricPlatform()
+spark = platform.get_spark_session()  # used by the validation cell's bundle read
 platform.ensure_env()  # resolve workspace + lakehouse IDs from Spark conf
 fhir_root = platform.storage_path("bronze", "fhir")  # abfss://.../Files/bronze/fhir
 s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
@@ -237,23 +238,29 @@ for label, n in written_counts.items():
     print(f"  cohort={label}: {n:,}")
 print(f"  total      : {total_landed:,}")
 
-# 2. Sample bundle resource-type counts (proves it's parseable FHIR)
+# 2. Sample bundle resource-type counts (proves it's parseable FHIR).
+# Best-effort — wrapped so the manifest write below always runs even if the
+# sample bundle is unreadable. Reads via Spark wholetext to bypass
+# mssparkutils.fs.head's silent truncation on large bundles.
 sample_label = next((label for label, n in written_counts.items() if n > 0), None)
 if sample_label:
-    sample_entry = next(
-        e for e in msu.fs.ls(f"{fhir_root}/cohort={sample_label}") if e.name.endswith(".json")
-    )
-    sample_text = msu.fs.head(sample_entry.path, 64 * 1024 * 1024)
-    sample_bundle = json.loads(sample_text)
-    resource_counts: dict[str, int] = {}
-    for entry in sample_bundle.get("entry", []):
-        rtype = entry.get("resource", {}).get("resourceType")
-        if rtype:
-            resource_counts[rtype] = resource_counts.get(rtype, 0) + 1
-    print(f"\nSample bundle: {sample_entry.name}")
-    print(f"  resources: {sum(resource_counts.values()):,} across {len(resource_counts)} types")
-    for rtype, n in sorted(resource_counts.items(), key=lambda kv: -kv[1])[:8]:
-        print(f"    {rtype:<24} {n:>5}")
+    try:
+        sample_entry = next(
+            e for e in msu.fs.ls(f"{fhir_root}/cohort={sample_label}") if e.name.endswith(".json")
+        )
+        sample_text = spark.read.text(sample_entry.path, wholetext=True).first()["value"]
+        sample_bundle = json.loads(sample_text)
+        resource_counts: dict[str, int] = {}
+        for entry in sample_bundle.get("entry", []):
+            rtype = entry.get("resource", {}).get("resourceType")
+            if rtype:
+                resource_counts[rtype] = resource_counts.get(rtype, 0) + 1
+        print(f"\nSample bundle: {sample_entry.name}")
+        print(f"  resources: {sum(resource_counts.values()):,} across {len(resource_counts)} types")
+        for rtype, n in sorted(resource_counts.items(), key=lambda kv: -kv[1])[:8]:
+            print(f"    {rtype:<24} {n:>5}")
+    except Exception as err:  # noqa: BLE001
+        print(f"\n(skipped sample histogram: {type(err).__name__}: {err})")
 
 # 3. Write the ingest manifest (same shape as core/ingest/download.IngestManifest)
 manifest = {
