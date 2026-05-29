@@ -91,15 +91,17 @@ print(f"Platform: {platform.name} · Table: {TABLE} · Primary key: {spec.primar
 
 # CELL ********************
 
-bundles = platform.read_bronze_fhir()
-print(f"Bundles read: {len(bundles)}")
-
 parser = FHIRBundleParser()
 records: list[dict] = []
-for bundle in bundles:
+n_bundles = 0
+for path, bundle in platform.iter_bronze_files():
+    n_bundles += 1
     parsed = parser.parse_bundle(bundle)
-    records.extend(parsed.get(TABLE, []))
-print(f"{TABLE} records parsed (decoded): {len(records):,}")
+    src = path.rsplit("/", 1)[-1]
+    for r in parsed.get(TABLE, []):
+        r["source_file"] = src
+        records.append(r)
+print(f"Bundles read: {n_bundles} · {TABLE} records parsed (decoded): {len(records):,}")
 
 table = spec.build(records, ingest_ts)
 print(f"Built {TABLE} table: {table.num_rows:,} rows, {len(table.schema)} columns")

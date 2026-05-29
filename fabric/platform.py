@@ -75,8 +75,13 @@ class FabricPlatform(LakehousePlatform):
 
     # ------------------------------------------------------- lazy environment
 
-    def _ensure_env(self) -> tuple[str, str]:
-        """Resolve workspace + lakehouse names from mssparkutils on first call."""
+    def ensure_env(self) -> tuple[str, str]:
+        """Resolve workspace + lakehouse names from mssparkutils on first call.
+
+        Public — notebooks need this to construct ad-hoc paths (e.g. the corpus
+        manifest path in ``10_gold_validation``) without re-implementing the
+        env resolution.
+        """
         if self._workspace_id is None or self._lakehouse_name is None:
             try:
                 import notebookutils.mssparkutils as msu
@@ -91,6 +96,9 @@ class FabricPlatform(LakehousePlatform):
             if self._lakehouse_name is None:
                 self._lakehouse_name = msu.lakehouse.get()["displayName"]
         return self._workspace_id, self._lakehouse_name
+
+    # Backward-compat alias — kept so existing internal callers don't break.
+    _ensure_env = ensure_env
 
     def get_spark_session(self) -> Any | None:
         """Return the attached Fabric SparkSession (injected as global ``spark``)."""
@@ -118,21 +126,28 @@ class FabricPlatform(LakehousePlatform):
 
     def read_bronze_fhir(self, cohort: str | None = None) -> list[dict]:
         """Read FHIR bundles from ``Files/bronze/fhir/cohort=*/*.json``."""
+        return [bundle for _path, bundle in self.iter_bronze_files(cohort=cohort)]
+
+    def iter_bronze_files(self, cohort: str | None = None):
+        """Yield ``(path, bundle_dict)`` pairs from ``Files/bronze/fhir/cohort=*/``.
+
+        Mirrors :meth:`core.platform.local_lite.LocalLitePlatform.iter_bronze_files`.
+        Notebooks use this to stamp ``source_file`` on each parsed record for
+        provenance (the CLI pipeline does the equivalent in ``_parse_cohort``).
+        """
         try:
             import notebookutils.mssparkutils as msu
         except ImportError as exc:
-            raise RuntimeError("read_bronze_fhir requires Fabric runtime") from exc
+            raise RuntimeError("iter_bronze_files requires Fabric runtime") from exc
 
         fhir_root = self.storage_path("bronze", "fhir")
         pattern_dir = f"{fhir_root}/cohort={cohort}" if cohort else fhir_root
-        bundles: list[dict] = []
         for entry in self._walk_json(msu, pattern_dir, recurse=cohort is None):
             try:
                 text = msu.fs.head(entry, 1024 * 1024 * 64)  # 64 MB cap per bundle
-                bundles.append(json.loads(text))
+                yield entry, json.loads(text)
             except (json.JSONDecodeError, OSError) as err:
                 logger.warning("Skipping unreadable bundle: %s", err)
-        return bundles
 
     @staticmethod
     def _walk_json(msu: Any, root: str, *, recurse: bool) -> list[str]:

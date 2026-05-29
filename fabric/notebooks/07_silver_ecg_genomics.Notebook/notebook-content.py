@@ -89,15 +89,18 @@ for t in SPECIALTY_TABLES:
 
 # CELL ********************
 
-bundles = platform.read_bronze_fhir()
-print(f"Bundles read: {len(bundles)}")
-
 parser = FHIRBundleParser()
 accumulated: dict[str, list[dict]] = {t: [] for t in SPECIALTY_TABLES}
-for bundle in bundles:
+n_bundles = 0
+for path, bundle in platform.iter_bronze_files():
+    n_bundles += 1
     parsed = parser.parse_bundle(bundle)
+    src = path.rsplit("/", 1)[-1]
     for t in SPECIALTY_TABLES:
-        accumulated[t].extend(parsed.get(t, []))
+        for r in parsed.get(t, []):
+            r["source_file"] = src
+            accumulated[t].append(r)
+print(f"Bundles read: {n_bundles}")
 
 for t in SPECIALTY_TABLES:
     print(f"  {t:<20s} records parsed: {len(accumulated[t]):>6,}")

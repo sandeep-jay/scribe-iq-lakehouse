@@ -96,28 +96,28 @@ spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
 gold_df = spark.read.format("delta").load(platform.storage_path("gold", TABLE_NAME))
 gold_count = gold_df.count()
 assert gold_count > 0, "gold.encounter_summary is empty — run 09 first"
-print(f"\u2713 Gate 1: gold.{TABLE_NAME} has {gold_count:,} rows")
+print(f"✓ Gate 1: gold.{TABLE_NAME} has {gold_count:,} rows")
 
 # Gate 2 — manifest exists + parses
-workspace_id, lakehouse = platform._ensure_env()
+workspace_id, lakehouse = platform.ensure_env()
 manifest_path = (
     f"abfss://{workspace_id}@onelake.dfs.fabric.microsoft.com/"
     f"{lakehouse}.Lakehouse/Files/gold/_metadata/corpus_manifest.json"
 )
 manifest = json.loads(msu.fs.head(manifest_path, 1024 * 1024))
-print(f"\u2713 Gate 2: corpus_manifest.json parsed ({len(json.dumps(manifest)):,} bytes)")
+print(f"✓ Gate 2: corpus_manifest.json parsed ({len(json.dumps(manifest)):,} bytes)")
 
 # Gate 3 — contract version
 assert manifest["contract_version"] == CONTRACT_VERSION, (
     f"contract_version mismatch: manifest={manifest['contract_version']} expected={CONTRACT_VERSION}"
 )
-print(f"\u2713 Gate 3: contract_version = {manifest['contract_version']}")
+print(f"✓ Gate 3: contract_version = {manifest['contract_version']}")
 
 # Gate 4 — gold table name
 assert manifest["gold_table_name"] == TABLE_NAME, (
     f"gold_table_name mismatch: manifest={manifest['gold_table_name']} expected={TABLE_NAME}"
 )
-print(f"\u2713 Gate 4: gold_table_name = {manifest['gold_table_name']}")
+print(f"✓ Gate 4: gold_table_name = {manifest['gold_table_name']}")
 
 # Gate 5 — all Silver sources present in lineage
 manifest_silver = set(manifest["silver_lineage"].keys())
@@ -126,14 +126,14 @@ missing = expected_silver - manifest_silver
 extra = manifest_silver - expected_silver
 assert not missing, f"manifest missing Silver sources: {missing}"
 assert not extra, f"manifest has unexpected Silver sources: {extra}"
-print(f"\u2713 Gate 5: silver_lineage covers all {len(expected_silver)} expected sources")
+print(f"✓ Gate 5: silver_lineage covers all {len(expected_silver)} expected sources")
 
 # Gate 6 — gold count matches manifest corpus stats
 manifest_total = manifest["corpus_stats"]["total_encounters"]
 assert gold_count == manifest_total, (
     f"gold rows ({gold_count}) != manifest total_encounters ({manifest_total})"
 )
-print(f"\u2713 Gate 6: gold count {gold_count:,} matches manifest total_encounters")
+print(f"✓ Gate 6: gold count {gold_count:,} matches manifest total_encounters")
 
 print("\nALL 6 CONTRACT GATES PASSED — corpus ships at version", CONTRACT_VERSION)
 

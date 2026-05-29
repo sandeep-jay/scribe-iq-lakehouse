@@ -168,7 +168,8 @@ def main() -> int:
     for ipynb_path in paths:
         changed = convert(ipynb_path, check=args.check)
         status = "CHANGED" if changed else "ok"
-        print(f"  [{status}] {ipynb_path} -> {ipynb_path.parent / (ipynb_path.stem + '.Notebook')}/")
+        out = ipynb_path.parent / f"{ipynb_path.stem}.Notebook"
+        print(f"  [{status}] {ipynb_path} -> {out}/")
         any_changed = any_changed or changed
 
     if args.check and any_changed:
