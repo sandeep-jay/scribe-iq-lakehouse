@@ -169,27 +169,74 @@ Wires the workspace ↔ `/fabric/notebooks/` so notebook commits flow both ways.
 
 ---
 
+## Why Azure DevOps (not GitHub Git Integration)
+
+GitHub is the canonical public-facing repo. **Azure DevOps mirrors GitHub**
+and is the Git provider Fabric Git Integration is wired to.
+
+We didn't pick this for fun. On the Fabric trial tenant available to us,
+the **"Users can sync workspace items with GitHub repositories"** tenant
+setting is blocked at the admin level — Fabric Git Integration → Provider
+list shows GitHub greyed-out / "disabled by your administrator," with no
+way to flip it as a trial tenant admin. **Azure DevOps Git Integration is
+unaffected** — listed and connectable from the same workspace, same MS
+account.
+
+The chosen arrangement:
+
+```
+GitHub                          Azure DevOps                Fabric
+├─ canonical public repo  →     ├─ mirror of GitHub      ─→  ├─ Git Integration
+├─ shows on portfolio           ├─ Fabric pulls from here     │   reads from DevOps
+├─ all PRs / CI / history       └─ kept in sync via import    └─ workspace items
+                                                                  round-trip here
+```
+
+**Keeping the mirror in sync:** when GitHub gets a new commit, refresh
+DevOps via Repos → Files → Import (or set up a periodic sync job; for a
+solo-dev project a manual re-import every few commits is fine).
+Alternatively, configure `git push` locally to push to both remotes — see
+[Phase 6 of the Azure DevOps walkthrough](#) (left as a one-time setup).
+
+**If you later move off the trial** (paid F-SKU, different tenant): GitHub
+Git Integration may become available and the DevOps mirror can be retired.
+The repo content is identical between the two; only the Fabric Git
+Integration provider would flip.
+
 ## CI flow
 
-[`.github/workflows/fabric-deploy.yml`](../../.github/workflows/fabric-deploy.yml) runs on every push to `main` touching `core/**` or `fabric/**`:
+[`.github/workflows/fabric-deploy.yml`](../../.github/workflows/fabric-deploy.yml) **is currently
+disabled (manual-trigger only).**
 
-1. Checkout repo, install `[local,dev,orchestration,fabric]` + `build` + `fabric-cicd`.
-2. `pytest fabric/tests/` — offline contract tests (5 pass, 1 fabric-marked test skipped without `FABRIC_TENANT_ID`).
-3. `python -m build --wheel --outdir dist/`.
-4. `python fabric/deploy/upload_wheel.py --wheel dist/scribe_iq_lakehouse*.whl --environment-id $FABRIC_ENVIRONMENT_ID` *(same script as Path B above)*.
-5. `fabric-cicd deploy --config fabric/deploy/fabric_cicd_config.yml` — syncs notebooks.
-6. `fabric-cicd smoke-run --config fabric/deploy/fabric_cicd_config.yml` — runs notebook 05 end-to-end.
+Reason: the workflow path (GitHub Actions → Service Principal → Fabric REST
+API → notebook + wheel deploy) duplicates what Fabric Git Integration +
+manual wheel upload already does on the DevOps path. Plus we never
+registered the Service Principal, so every auto-trigger run was failing
+with credential errors. Trigger changed to `workflow_dispatch` to stop the
+noise; file kept for reference.
 
-**GitHub secrets** — set on the `fabric-prod` GitHub Environment (Repo Settings → Environments → New environment `fabric-prod`):
+**To re-enable later** (if you set up Service Principal + secrets):
 
-- `FABRIC_TENANT_ID`
-- `FABRIC_CLIENT_ID`
-- `FABRIC_CLIENT_SECRET`
-- `FABRIC_WORKSPACE_ID`
-- `FABRIC_LAKEHOUSE_ID`
-- `FABRIC_ENVIRONMENT_ID`
+1. Register Service Principal in Entra ID; grant Contributor on the Fabric
+   workspace.
+2. Add `fabric-prod` GitHub Environment with these secrets:
+   - `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`
+   - `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_ID`, `FABRIC_ENVIRONMENT_ID`
+3. In `fabric-deploy.yml` change `on:` back to:
+   ```yaml
+   on:
+     push:
+       branches: [main]
+       paths: ["core/**", "fabric/**", ".github/workflows/fabric-deploy.yml"]
+     workflow_dispatch:
+   ```
 
-Recommend restricting `fabric-prod` deployments to the `main` branch.
+When enabled, the workflow:
+1. Installs `[local,dev,orchestration,fabric]` + `build` + `fabric-cicd`.
+2. Runs `pytest fabric/tests/` (5 contract tests pass; the `@pytest.mark.fabric` test runs against the real workspace).
+3. Builds the core wheel.
+4. Uploads via `fabric/deploy/upload_wheel.py` (MSAL Service Principal → REST PUT to `/environments/{env}/staging/libraries` → POST `/publish` → poll until `Success`).
+5. Triggers `fabric-cicd deploy + smoke-run` against notebook 05.
 
 ---
 

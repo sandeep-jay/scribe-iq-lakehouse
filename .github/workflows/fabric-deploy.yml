@@ -1,12 +1,17 @@
 name: fabric deploy
 
+# DISABLED auto-trigger — manual only (workflow_dispatch).
+#
+# Current deploy path uses Azure DevOps + Fabric Git Integration for notebooks
+# and manual UI upload for the core wheel. The original GitHub-Actions-driven
+# path here requires a Service Principal that we deferred; on the Fabric trial
+# tenant we were on, GitHub Git Integration was blocked at the admin level so
+# DevOps became the path. See fabric/docs/DEPLOYMENT.md "Why Azure DevOps."
+#
+# Keep this file for reference: if/when the Service Principal is registered
+# and CI-driven deploys are wanted, change `on:` back to `push: branches: [main]`
+# + register the FABRIC_* secrets in the fabric-prod GitHub Environment.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "core/**"
-      - "fabric/**"
-      - ".github/workflows/fabric-deploy.yml"
   workflow_dispatch:
 
 # Each deploy targets a single environment with its own secrets — see
