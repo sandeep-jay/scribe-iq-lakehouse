@@ -1,8 +1,16 @@
 # ADR-017: Multi-platform repo layout — `core/` + per-platform domains
 
-**Date:** 2026-05-28
+**Date:** 2026-05-28 (amended 2026-05-29 — see ADR-022)
 **Status:** Accepted
 **Deciders:** Sandeep Jayaprakash
+
+> **Amendment (2026-05-29):** ADR-022 superseded ADR-002 and ADR-004 — each
+> platform tier is now an independent end-to-end implementation, not a thin
+> wrapper around a shared transform layer. The repo *layout* this ADR defines
+> still stands; only the dependency story changed: `fabric/` no longer imports
+> transform / Gold / validation logic from `core/`. The one-way dependency
+> rule below now applies narrowly (utilities like `core.redaction` if needed)
+> rather than to the transform contract. See ADR-022.
 
 ## Context
 

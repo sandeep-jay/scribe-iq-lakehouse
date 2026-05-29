@@ -1,8 +1,14 @@
 # ADR-002: Platform abstraction layer design
 
 **Date:** 2026-05-27
-**Status:** Accepted
+**Status:** Superseded by [ADR-022](../adr/022-platform-independent-implementations.md) (2026-05-29)
 **Deciders:** Sandeep Jayaprakash
+
+> **Superseded.** The `LakehousePlatform` ABC no longer serves as the universal
+> contract across cloud-native platforms; under ADR-022 each platform tier is
+> an independent end-to-end implementation. The ABC + factory remain in
+> `core/platform/` to dispatch local execution surfaces (LocalLite, future
+> LocalSpark). Preserved here for historical context.
 
 ## Context
 
