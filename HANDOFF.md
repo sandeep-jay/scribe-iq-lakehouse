@@ -1,4 +1,4 @@
-# HANDOFF — Session 5 · Fabric Spark-native rewrite (ADR-022)
+# HANDOFF — Session 5 · Medallion green end-to-end in Fabric
 **Date:** 2026-05-29 · **Branch:** `feat/fabric-spark-native` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
 
 > State only. For what happened in this (or any prior) session see [CHANGELOG.md](CHANGELOG.md).
@@ -6,48 +6,50 @@
 
 ## Current state
 
-Branch `feat/fabric-spark-native` is 7 commits ahead of `main` and contains
-the full pure-Spark Fabric rewrite per ADR-022: `fabric/transforms/`
-(bundle_schema + 10 Spark-native Silver builders + registry),
-`fabric/gold/` (Spark-native encounter_summary + corpus_manifest),
-`fabric/validation/` (single-`.agg()`-per-table), slimmed
-`fabric/platform.py` (Spark-only, no PyArrow wrappers, no ABC inheritance),
-deleted `fabric/spark_helpers.py`, rewritten notebooks 00 + 02–10, ADRs
-002/004/020 archived under `docs/_archive/adr/` with `ADR-022` adopted, and
-CLAUDE.md / `.claude/rules/` updated. Tests pass: 128 passed + 1 skipped
-(workspace-only). Branch is unpushed; user explicitly held PR opening for
-review.
+Pure-Spark fabric/ rewrite is **fully running in the cloud**: notebooks
+00–10 are green end-to-end on Fabric F4 capacity against `SAMPLE_SIZE=100`
+Coherent bundles. All 10 Silver tables + `gold.encounter_summary` + both
+manifests (Bronze + Gold) materialized in the `scribe_iq_synthea_coherent`
+lakehouse. Branch is **12 commits ahead of main**, pushed to both
+`origin` (GitHub mirror, canonical) and Azure DevOps (Fabric Git
+Integration source). Capacity is paused; resume picks up cleanly because
+all storage persists.
 
 ## Next task
 
-**User review of branch `feat/fabric-spark-native`, then push + open PR.**
+**Resume the demo deliverables stack.** In this order:
 
-```bash
-git log --oneline main..feat/fabric-spark-native   # 7 commits to review
-git diff main..feat/fabric-spark-native -- fabric/ docs/adr/ CLAUDE.md
-# After approval:
-git push -u origin feat/fabric-spark-native
-gh pr create --title "Fabric Spark-native rewrite (ADR-022)" --body "..."
-```
-
-The first cloud-side smoke after merge is `00_setup` in the Fabric
-workspace, then 02 (smallest table — fast feedback on the Spark
-`from_json` path before running 04/05 which fan out to more tables).
+1. **Confirm screenshots** in `fabric/docs/screenshots/` — especially
+   `05_silver_soap_notes.png` (decoded SOAP note) and
+   `10b_encounter_card.png` (rendered displayHTML card). If missing,
+   re-run those two notebooks for the screenshot only — data is intact.
+2. **OneLake explorer screenshot** of the lakehouse tree showing
+   `Tables/silver/* (10) + Tables/gold/encounter_summary +
+   Files/bronze/fhir/cohort={A,B,C} + Files/gold/_metadata/`.
+3. **Build the Fabric Data Pipeline** —
+   `fabric/data_factory/medallion_pipeline.DataPipeline/` with 10 Notebook
+   activities chained on-success. Replaces 10 manual notebook runs with
+   one Run click. Headline demo artifact.
+4. **Power BI Direct Lake report** on `gold.encounter_summary` — patient
+   count card, encounter count card, avg active conditions per encounter,
+   top-conditions bar chart, SOAP-note length distribution.
+5. **Open PR `feat/fabric-spark-native → main`** with screenshots
+   embedded in the body.
 
 ## Open decisions
 
 | Decision | Options | Owner | Due |
 |---|---|---|---|
-| Coherent ingest scope for `01_bronze_ingest` | Full ~1,278 patients (~10 min, ~14 GB OneLake) / Stratified ~200 patients (~1 min) | User + Claude | Before authoring 01 |
-| Service Principal registration | Skip (manual UI uploads forever) / Register (enables REST + CI) | User | Before 3rd wheel re-upload becomes annoying |
+| Full-corpus re-run before PR | Yes (~1,278 bundles, 15 min, more impressive numbers) / No (stay on 100-sample) | User | Before PR open |
+| Power BI report scope | Minimal (3 cards + top-conditions chart) / Richer (drillthrough patient page with encounter card) | User | Before report build |
 
 ## Blockers / waiting-on
 
-- **User review of `feat/fabric-spark-native`** before PR is opened
-  (explicit instruction: *"don't push a PR without my say so"*).
+- **User review of branch** before opening PR (explicit "don't push a PR
+  without my say so" — still standing).
 
 ## First task for next session
 
-After PR merges, run `00_setup` in the Fabric workspace; if all 4 gates
-pass, smoke-run notebook 02 against a small cohort to verify the Spark
-`from_json + BUNDLE_SCHEMA` path produces non-empty `silver.patient`.
+Resume capacity, confirm screenshots are in `fabric/docs/screenshots/`,
+then start the Data Pipeline build (`fabric/data_factory/medallion_pipeline.DataPipeline/.platform`
++ `pipeline-content.json`).
