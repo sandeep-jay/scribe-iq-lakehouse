@@ -19,22 +19,33 @@ from fabric.platform import FabricPlatform
 
 
 def test_storage_path_builds_onelake_uri():
-    """storage_path is pure (no Fabric runtime needed) — verify the URI shape."""
-    fp = FabricPlatform(workspace_id="ws-guid", lakehouse_name="scribe_iq")
+    """storage_path is pure (no Fabric runtime needed) — verify GUID-based URI shape."""
+    fp = FabricPlatform(workspace_id="ws-guid", lakehouse_id="lh-guid")
     assert fp.storage_path("silver", "patient") == (
-        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/scribe_iq.Lakehouse/Tables/silver/patient"
+        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Tables/silver/patient"
     )
     assert fp.storage_path("gold", "encounter_summary") == (
-        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/"
-        "scribe_iq.Lakehouse/Tables/gold/encounter_summary"
+        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Tables/gold/encounter_summary"
     )
     assert fp.storage_path("bronze", "fhir") == (
-        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/scribe_iq.Lakehouse/Files/bronze/fhir"
+        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files/bronze/fhir"
+    )
+
+
+def test_files_path_builds_onelake_uri():
+    """files_path returns Files/-rooted URIs (manifests, bronze JSON, etc.)."""
+    fp = FabricPlatform(workspace_id="ws-guid", lakehouse_id="lh-guid")
+    assert fp.files_path() == (
+        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files"
+    )
+    assert fp.files_path("bronze/_metadata/ingest_manifest.json") == (
+        "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/"
+        "lh-guid/Files/bronze/_metadata/ingest_manifest.json"
     )
 
 
 def test_storage_path_rejects_bad_layer():
-    fp = FabricPlatform(workspace_id="ws", lakehouse_name="lh")
+    fp = FabricPlatform(workspace_id="ws", lakehouse_id="lh")
     with pytest.raises(ValueError, match="Invalid layer"):
         fp.storage_path("platinum", "patient")
 

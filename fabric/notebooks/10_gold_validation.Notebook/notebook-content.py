@@ -99,11 +99,7 @@ assert gold_count > 0, "gold.encounter_summary is empty — run 09 first"
 print(f"✓ Gate 1: gold.{TABLE_NAME} has {gold_count:,} rows")
 
 # Gate 2 — manifest exists + parses
-workspace_id, lakehouse = platform.ensure_env()
-manifest_path = (
-    f"abfss://{workspace_id}@onelake.dfs.fabric.microsoft.com/"
-    f"{lakehouse}.Lakehouse/Files/gold/_metadata/corpus_manifest.json"
-)
+manifest_path = platform.files_path("gold/_metadata/corpus_manifest.json")
 manifest = json.loads(msu.fs.head(manifest_path, 1024 * 1024))
 print(f"✓ Gate 2: corpus_manifest.json parsed ({len(json.dumps(manifest)):,} bytes)")
 

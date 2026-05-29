@@ -87,7 +87,7 @@ SAMPLE_SIZE: int | None = 100  # set to None for the full ~1,278 corpus
 # ---------------------------------------------------------------------------
 
 platform = FabricPlatform()
-workspace_id, lakehouse_name = platform.ensure_env()
+platform.ensure_env()  # resolve workspace + lakehouse IDs from Spark conf
 fhir_root = platform.storage_path("bronze", "fhir")  # abfss://.../Files/bronze/fhir
 s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
 
@@ -266,10 +266,7 @@ manifest = {
     "platform": platform.name,
     "errors": [{"key": k, "reason": r} for k, r in errors[:25]],  # cap to keep manifest small
 }
-manifest_path = (
-    f"abfss://{workspace_id}@onelake.dfs.fabric.microsoft.com/"
-    f"{lakehouse_name}.Lakehouse/Files/bronze/_metadata/ingest_manifest.json"
-)
+manifest_path = platform.files_path("bronze/_metadata/ingest_manifest.json")
 msu.fs.put(manifest_path, json.dumps(manifest, indent=2), True)
 print(f"\nWrote manifest: {manifest_path}")
 

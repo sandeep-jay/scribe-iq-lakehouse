@@ -49,28 +49,33 @@ class FabricPlatform:
     def __init__(
         self,
         workspace_id: str | None = None,
+        lakehouse_id: str | None = None,
         lakehouse_name: str | None = None,
         spark: Any | None = None,
     ) -> None:
         self._workspace_id = workspace_id
+        self._lakehouse_id = lakehouse_id
         self._lakehouse_name = lakehouse_name
         self._spark = spark
 
     # ------------------------------------------------------- lazy environment
 
     def ensure_env(self) -> tuple[str, str]:
-        """Resolve workspace + lakehouse from Spark conf on first call.
+        """Resolve workspace ID + lakehouse ID from Spark conf on first call.
+
+        Returns ``(workspace_id, lakehouse_id)`` — both GUIDs. We use GUIDs
+        in every OneLake path because some Fabric tenants have
+        ``FriendlyNameSupportDisabled`` and reject display-name paths
+        (``<name>.Lakehouse``) with HTTP 400. GUIDs work in every workspace.
 
         Fabric injects the attached lakehouse identity into the Spark session
-        as ``trident.*`` config keys. These are the documented, stable Fabric
-        API for runtime identity — unlike the Synapse-era
-        ``mssparkutils.env.getWorkspaceId()`` which doesn't exist on Fabric.
+        as ``trident.*`` config keys — the documented stable runtime API.
         """
-        if self._workspace_id is None or self._lakehouse_name is None:
+        if self._workspace_id is None or self._lakehouse_id is None:
             spark = self.get_spark_session()
             if spark is None:
                 msg = (
-                    "FabricPlatform needs workspace_id + lakehouse_name; pass them "
+                    "FabricPlatform needs workspace_id + lakehouse_id; pass them "
                     "explicitly or run inside a Fabric notebook with an attached "
                     "Spark session."
                 )
@@ -78,17 +83,35 @@ class FabricPlatform:
             try:
                 if self._workspace_id is None:
                     self._workspace_id = spark.conf.get("trident.workspace.id")
+                if self._lakehouse_id is None:
+                    self._lakehouse_id = spark.conf.get("trident.lakehouse.id")
                 if self._lakehouse_name is None:
-                    self._lakehouse_name = spark.conf.get("trident.lakehouse.name")
+                    # Best-effort; informational only — paths use the ID.
+                    try:
+                        self._lakehouse_name = spark.conf.get("trident.lakehouse.name")
+                    except Exception:  # noqa: BLE001
+                        self._lakehouse_name = self._lakehouse_id
             except Exception as exc:  # noqa: BLE001 — Spark raises NoSuchElementException
                 msg = (
                     "Couldn't read Fabric identity from Spark conf "
-                    "(trident.workspace.id / trident.lakehouse.name). Either no "
+                    "(trident.workspace.id / trident.lakehouse.id). Either no "
                     "lakehouse is attached to this notebook (top bar → Add lakehouse), "
                     "or you're not running inside a Fabric notebook."
                 )
                 raise RuntimeError(msg) from exc
-        return self._workspace_id, self._lakehouse_name
+        return self._workspace_id, self._lakehouse_id
+
+    def files_path(self, subpath: str = "") -> str:
+        """Return an ``abfss://`` URI under the lakehouse's ``Files/`` root.
+
+        Use for non-table artifacts (Bronze raw JSON, Gold manifest JSON, etc.)
+        that don't have a ``layer`` in :meth:`storage_path`'s sense. ``subpath``
+        is appended verbatim — pass ``"bronze/_metadata/ingest_manifest.json"``
+        or ``"gold/_metadata/corpus_manifest.json"``.
+        """
+        workspace_id, lakehouse_id = self.ensure_env()
+        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_id}/Files"
+        return f"{base}/{subpath}" if subpath else base
 
     def get_spark_session(self) -> SparkSession | None:
         """Return the attached Fabric ``SparkSession`` (injected as global ``spark``)."""
@@ -104,12 +127,17 @@ class FabricPlatform:
     # ----------------------------------------------------------------- paths
 
     def storage_path(self, layer: str, table: str) -> str:
-        """Return the OneLake ``abfss://`` URI for a Delta table or raw-file root."""
+        """Return the OneLake ``abfss://`` URI for a Delta table or raw-file root.
+
+        Uses lakehouse GUID (not display name) so the path works on tenants
+        with ``FriendlyNameSupportDisabled`` — those reject ``<name>.Lakehouse``
+        paths with HTTP 400.
+        """
         if layer not in _VALID_LAYERS:
             msg = f"Invalid layer {layer!r}; expected one of {sorted(_VALID_LAYERS)}"
             raise ValueError(msg)
-        workspace_id, lakehouse_name = self.ensure_env()
-        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
+        workspace_id, lakehouse_id = self.ensure_env()
+        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_id}"
         if layer == "bronze":
             return f"{base}/Files/bronze/{table}"
         return f"{base}/Tables/{layer}/{table}"
@@ -250,9 +278,7 @@ class FabricPlatform:
         except ImportError as exc:
             msg = "write_gold_manifest requires Fabric runtime"
             raise RuntimeError(msg) from exc
-        workspace_id, lakehouse_name = self.ensure_env()
-        base = f"abfss://{workspace_id}@{_ONELAKE_HOST}/{lakehouse_name}.Lakehouse"
-        path = f"{base}/Files/gold/_metadata/corpus_manifest.json"
+        path = self.files_path("gold/_metadata/corpus_manifest.json")
         msu.fs.put(path, json.dumps(manifest, indent=2), True)  # overwrite=True
 
     # ----------------------------------------------------------- write helper

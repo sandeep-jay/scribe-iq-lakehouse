@@ -20,4 +20,5 @@
 
 dependencies:
   - pip:
-    - boto3>=1.34
+    - boto3==1.35.36
+    - botocore==1.35.36

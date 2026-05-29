@@ -114,25 +114,26 @@ results: list[Check] = []
 # Gate 1 — Spark + workspace.
 try:
     spark = SparkSession.getActiveSession() or SparkSession.builder.getOrCreate()
-    workspace_id = msu.env.getWorkspaceId()
+    # Fabric injects identity into the Spark session as trident.* keys.
+    # mssparkutils.env.getWorkspaceId() is a Synapse API not present on Fabric.
+    workspace_id = spark.conf.get("trident.workspace.id")
     results.append(
         Check("spark+workspace", True, f"spark={spark.version} workspace={workspace_id[:8]}…")
     )
 except Exception as err:  # noqa: BLE001
     results.append(Check("spark+workspace", False, f"{type(err).__name__}: {err}"))
 
-# Gate 2 — FabricPlatform.storage_path URI shape.
+# Gate 2 — FabricPlatform.storage_path URI shape (GUID-based, ADR-022).
 try:
     uri = platform.storage_path("silver", "patient")
-    ok = uri.startswith("abfss://") and ".Lakehouse/Tables/silver/patient" in uri
+    ok = uri.startswith("abfss://") and "/Tables/silver/patient" in uri
     results.append(Check("storage_path", ok, uri))
 except Exception as err:  # noqa: BLE001
     results.append(Check("storage_path", False, f"{type(err).__name__}: {err}"))
 
 # Gate 3 — OneLake Files reachable.
 try:
-    files_root = platform.storage_path("bronze", "").rsplit("/", 1)[0]  # Files/bronze
-    entries = msu.fs.ls(files_root.rsplit("/", 1)[0])  # Files/
+    entries = msu.fs.ls(platform.files_path())  # Files/ root
     results.append(Check("onelake_files", True, f"Files/ listed {len(entries)} entries"))
 except Exception as err:  # noqa: BLE001
     results.append(Check("onelake_files", False, f"{type(err).__name__}: {err}"))

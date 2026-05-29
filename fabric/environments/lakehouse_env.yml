@@ -9,11 +9,11 @@
 name: scribe-iq-lakehouse-env
 runtime: "1.3"   # Fabric Runtime version (Spark 3.5, Delta 3.x)
 
-# Public libraries — pip-installable from PyPI. Import file:
-# fabric/environments/public_libraries.yml
+# Public libraries — pip-installable from PyPI, pinned for reproducibility.
+# Import file: fabric/environments/public_libraries.yml
 public_libraries:
-  - boto3>=1.34   # anonymous S3 client for the Synthea Coherent public bucket
-                  # (used by 01_bronze_ingest; gated by 00_setup Check 4)
+  - boto3==1.35.36     # anonymous S3 client for the Synthea Coherent public bucket
+  - botocore==1.35.36  # boto3's HTTP layer; pinned to the matching minor for safety
 
 # Custom library — the project wheel built by ``python -m build --wheel``.
 # Uploaded manually via Custom Libraries → Upload (or programmatically by
