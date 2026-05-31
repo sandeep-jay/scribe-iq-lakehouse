@@ -8,6 +8,67 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Session 5 (in progress) — Fabric Spark-native rewrite (ADR-022) + dedup fix + Power BI
 Plan: [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md).
 
+#### Milestone (2026-05-29 — first green cloud run)
+- **Notebooks 00–10 ran successfully end-to-end on Fabric F4 capacity**
+  against `SAMPLE_SIZE=100` Coherent bundles. All 10 Silver tables +
+  `gold.encounter_summary` + Bronze/Gold manifests materialized in the
+  `scribe_iq_synthea_coherent` lakehouse.
+- Branch `feat/fabric-spark-native` pushed to **both** GitHub (canonical
+  mirror) and Azure DevOps (Fabric Git Integration source) via
+  multi-push origin. Single `git push` fans out to both.
+
+#### Added (2026-05-29)
+- `fabric/notebooks/01_bronze_ingest.Notebook/` — self-contained Bronze
+  ingest. Pulls Synthea Coherent from `s3://synthea-open-data/coherent/`
+  via anonymous boto3, round-robin partitions into `cohort=A,B,C` under
+  `Files/bronze/fhir/`, writes an `IngestManifest`-shaped JSON under
+  `Files/bronze/_metadata/`. `SAMPLE_SIZE` knob for fast demo (`100`) vs
+  full corpus (`None`).
+- `fabric/environments/public_libraries.yml` — pip-block file Fabric's
+  Environment "Import .yml" UI accepts; pins `boto3==1.35.36` +
+  `botocore==1.35.36` for reproducibility.
+- `FabricPlatform.files_path(subpath)` — Files/-rooted URI helper for
+  non-table artifacts (Bronze JSON, Gold manifest). One place owns the
+  GUID-vs-name path detail.
+
+#### Changed (2026-05-29 — operational fixes from cloud run)
+- `FabricPlatform.ensure_env` now reads from Spark conf
+  (`trident.workspace.id`, `trident.lakehouse.id`) instead of
+  `mssparkutils.env.getWorkspaceId()` — the latter is a Synapse API
+  not present on Fabric. Returns workspace + lakehouse GUIDs (not name);
+  display name is best-effort, informational only.
+- OneLake paths now use lakehouse GUID throughout (drop `.Lakehouse`
+  suffix). Required for tenants with `FriendlyNameSupportDisabled`
+  (the trial tenant has this) — `<name>.Lakehouse` paths get HTTP 400.
+  Notebooks 00, 01, 10 updated to use `platform.files_path()` instead
+  of inline path construction.
+- `00_setup` Gate 1 reads `spark.conf.get("trident.workspace.id")`
+  (drops the broken `mssparkutils.env.getWorkspaceId` call).
+- `01_bronze_ingest` validation cell uses `spark.read.text(wholetext=True)`
+  to read the sample bundle — `mssparkutils.fs.head` silently truncates
+  at ~100 KB even when a larger maxBytes is passed, breaking
+  `json.loads`. Sample-histogram wrapped in try/except so a parse
+  failure prints a one-liner instead of halting the cell (manifest
+  write below it now always runs).
+- `fabric/environments/lakehouse_env.yml` — documentation-style spec
+  updated to match ADR-022; drops `pyarrow`/`pydicom`/`python-dateutil`
+  (not used by the pure-Spark Fabric tier — Fabric runtime supplies
+  pyarrow; pydicom is local-only; date parsing is Spark-native).
+- `.github/workflows/fabric-deploy.yml` renamed
+  `fabric-deploy.yml.disabled`. User removed the `fabric-prod` GitHub
+  Environment; the workflow's `environment: fabric-prod` would fail on
+  trigger. Matches the existing `aws-deploy.yml.disabled` /
+  `databricks-deploy.yml.disabled` convention. Active deploy path is
+  Azure DevOps Git Integration + manual UI wheel upload.
+
+#### Tests (2026-05-29)
+- `test_fabric_platform.py` updated for GUID-based API:
+  `test_storage_path_builds_onelake_uri` rewritten for the GUID shape
+  (no `.Lakehouse` suffix). New `test_files_path_builds_onelake_uri`
+  covers the helper. `FabricPlatform(lakehouse_id=...)` constructor
+  arg replaces `lakehouse_name=...` for path-shape tests.
+- Full suite: 128 passed + 1 skipped (workspace-only).
+
 #### Added (2026-05-29 — ADR-022 architecture pivot)
 - **ADR-022** (Independent per-platform implementations) — supersedes ADR-002
   (LakehousePlatform ABC as universal contract), ADR-004 (pa.Table as

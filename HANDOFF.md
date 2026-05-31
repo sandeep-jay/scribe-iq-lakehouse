@@ -1,5 +1,5 @@
 # HANDOFF — Session 5 · Medallion green end-to-end in Fabric
-**Date:** 2026-05-29 · **Branch:** `feat/fabric-spark-native` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
+**Date:** 2026-05-31 · **Branch:** `feat/fabric-spark-native` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
 
 > State only. For what happened in this (or any prior) session see [CHANGELOG.md](CHANGELOG.md).
 > Narrative belongs there, not here.

@@ -7,13 +7,15 @@ structure changes — it tracks reality, not the plan.
 
 ## Overview
 
-A medallion healthcare lakehouse on Synthea Coherent (synthetic FHIR R4). Engine-agnostic
-**pure transforms** return Apache Arrow tables; a **platform abstraction** handles all I/O
-so the same code runs locally (Polars + delta-rs) or on Microsoft Fabric. Today the
-**Bronze → Silver → Gold** path is fully built and runs end-to-end on the full
-1,278-patient dataset locally (143,946 encounter summaries), under either the
-`core.surfaces.cli.pipeline` CLI or a **Dagster** software-defined asset graph (ADR-015/016);
-**Fabric execution** is next.
+A medallion healthcare lakehouse on Synthea Coherent (synthetic FHIR R4). Per
+**ADR-022** the lakehouse runs as **two independent end-to-end implementations** that
+emit the same Gold corpus contract: a LocalLite tier (`core/` — Polars + delta-rs)
+and a Fabric tier (`fabric/` — Spark + OneLake Delta), each with its own Silver,
+Gold, and validation stack written engine-native. Today the **Bronze → Silver → Gold**
+path is fully built on both tiers — locally it runs end-to-end on the full
+1,278-patient dataset (143,946 encounter summaries) via the `core.surfaces.cli.pipeline`
+CLI or a **Dagster** software-defined asset graph (ADR-015/016); on Fabric it ran
+green end-to-end on F4 capacity against a 100-patient demo sample via notebooks 00–10.
 
 ```mermaid
 flowchart TD
@@ -41,11 +43,13 @@ flowchart TD
     class B,ST,G done;
 ```
 
-The same transforms run under **three execution surfaces** (ADR-015/016): the
-dependency-light `core.surfaces.cli.pipeline` CLI, a **Dagster** asset graph (cohorts =
-partitions, `validate_table` = asset checks, sensor watches `data/bronze/fhir/`),
-and the upcoming Fabric notebooks. The orchestration tier imports the pure
-transforms and platform — the lakehouse never imports orchestration.
+The LocalLite tier runs under **two local execution surfaces** (ADR-015/016): the
+dependency-light `core.surfaces.cli.pipeline` CLI and a **Dagster** asset graph
+(cohorts = partitions, `validate_table` = asset checks, sensor watches
+`data/bronze/fhir/`). The Fabric tier runs under its own independent execution
+surface — `fabric/notebooks/00–10` (`.Notebook/notebook-content.py` source-of-truth,
+ADR-021), each instantiating `FabricPlatform()` directly. The orchestration / notebook
+tiers import the per-tier transforms and platform — neither tier imports the other.
 
 For **read-only exploration** the same Delta tables are queryable from a
 **DuckDB UI notebook** ([`docs/demo/notebooks/demo_notebook.sql`](demo/notebooks/demo_notebook.sql))
@@ -63,7 +67,7 @@ renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAY
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
 | Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; as-of-date problem list; corpus contract v1.1.0 (ADR-012/014) |
 | Dagster orchestration | ✅ built (local) | `core/orchestration/dagster/` package | medallion as asset graph; cohort partitions; `validate_table` as asset checks (ADR-015/016) |
-| Fabric execution | 🔜 Session 5 | OneLake | notebooks 00–10; S3 shortcut; same transforms |
+| Fabric execution | ✅ green end-to-end (F4, SAMPLE_SIZE=100) | OneLake | independent Spark-native impl (ADR-022); notebooks 00–10; anonymous S3 ingest in 01; full 1,278-bundle re-run pending |
 
 ## Module map
 
