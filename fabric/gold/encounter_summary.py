@@ -197,7 +197,9 @@ def build_encounter_summary(
         F.coalesce(F.col("recent_labs"), F.array().cast(ArrayType(LAB_STRUCT))).alias(
             "recent_labs"
         ),
-        F.coalesce(F.col("procedures"), F.array().cast(ArrayType(StringType()))).alias("procedures"),
+        F.coalesce(F.col("procedures"), F.array().cast(ArrayType(StringType()))).alias(
+            "procedures"
+        ),
         F.col("soap_note_text"),
         F.col("soap_note_id"),
         F.col("ecg_finding"),

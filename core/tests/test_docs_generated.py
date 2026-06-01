@@ -5,8 +5,8 @@ If a Silver schema or validation rule changes, DATA_DICTIONARY.md must be regene
 never silently drift from the registry.
 """
 
-from core.transforms.registry import SILVER_TABLES
 from core.scripts.gen_data_dictionary import OUTPUT_PATH, render
+from core.transforms.registry import SILVER_TABLES
 
 
 def test_data_dictionary_is_current():

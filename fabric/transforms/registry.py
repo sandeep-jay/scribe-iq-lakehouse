@@ -6,9 +6,10 @@ layer iterate this dict; nothing else in fabric/ should hardcode table names.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from fabric.transforms import (
     silver_clinical,

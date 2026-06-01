@@ -25,9 +25,9 @@ from dagster import (
 )
 
 from core.ingest.bronze_landing import cohort_labels
-from core.transforms.registry import SILVER_TABLES
 from core.orchestration.dagster.partitions import COHORT_PARTITIONS_NAME, cohort_partitions
 from core.orchestration.dagster.resources import PlatformResource
+from core.transforms.registry import SILVER_TABLES
 
 #: Assets the sensor materializes per cohort: Bronze + every Silver table.
 #: Sourced from :data:`core.transforms.registry.SILVER_TABLES` so the selection

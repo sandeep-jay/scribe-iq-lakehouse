@@ -59,11 +59,13 @@ class ValidationResult:
     checks: list[CheckOutcome] = field(default_factory=list)
 
     def fail(self, check: str, name: str | None = None) -> None:
+        """Record a failed check and mark the overall result failed."""
         self.passed = False
         self.failed_checks.append(check)
         self.checks.append(CheckOutcome(name=name or check, passed=False, detail=check))
 
     def ok(self, name: str, detail: str) -> None:
+        """Record a passing check with a human-readable detail string."""
         self.checks.append(CheckOutcome(name=name, passed=True, detail=detail))
 
 

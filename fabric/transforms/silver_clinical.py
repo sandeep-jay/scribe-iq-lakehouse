@@ -58,6 +58,7 @@ CONDITION_SCHEMA = StructType(
 
 
 def build_condition(bundles_df: DataFrame, ingest_ts: datetime) -> DataFrame:
+    """Build the Silver ``condition`` table from FHIR ``Condition`` resources."""
     resources = parse_bundles_to_resources(bundles_df)
     cond = resources.filter(F.col("r.resourceType") == "Condition")
     code0 = _code_coding0(F.col("r.code"))
@@ -102,6 +103,7 @@ OBSERVATION_SCHEMA = StructType(
 
 
 def build_observation(bundles_df: DataFrame, ingest_ts: datetime) -> DataFrame:
+    """Build the Silver ``observation`` table from FHIR ``Observation`` resources."""
     resources = parse_bundles_to_resources(bundles_df)
     obs = resources.filter(F.col("r.resourceType") == "Observation")
     code0 = _code_coding0(F.col("r.code"))
@@ -153,6 +155,7 @@ MEDICATION_REQUEST_SCHEMA = StructType(
 
 
 def build_medication_request(bundles_df: DataFrame, ingest_ts: datetime) -> DataFrame:
+    """Build the Silver ``medication_request`` table from FHIR ``MedicationRequest`` resources."""
     resources = parse_bundles_to_resources(bundles_df)
     meds = resources.filter(F.col("r.resourceType") == "MedicationRequest")
     code0 = _code_coding0(F.col("r.medicationCodeableConcept"))
@@ -195,6 +198,7 @@ PROCEDURE_SCHEMA = StructType(
 
 
 def build_procedure(bundles_df: DataFrame, ingest_ts: datetime) -> DataFrame:
+    """Build the Silver ``procedure`` table from FHIR ``Procedure`` resources."""
     resources = parse_bundles_to_resources(bundles_df)
     proc = resources.filter(F.col("r.resourceType") == "Procedure")
     code0 = _code_coding0(F.col("r.code"))

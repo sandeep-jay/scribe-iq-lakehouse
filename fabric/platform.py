@@ -53,6 +53,7 @@ class FabricPlatform:
         lakehouse_name: str | None = None,
         spark: Any | None = None,
     ) -> None:
+        """Store explicit workspace/lakehouse IDs + Spark session; else resolved from Spark conf."""
         self._workspace_id = workspace_id
         self._lakehouse_id = lakehouse_id
         self._lakehouse_name = lakehouse_name
@@ -177,7 +178,9 @@ class FabricPlatform:
             raise RuntimeError(msg)
 
         fhir_root = self.storage_path("bronze", "fhir")
-        pattern = f"{fhir_root}/cohort={cohort}/*.json" if cohort else f"{fhir_root}/cohort=*/*.json"
+        pattern = (
+            f"{fhir_root}/cohort={cohort}/*.json" if cohort else f"{fhir_root}/cohort=*/*.json"
+        )
         df = (
             spark.read.text(pattern, wholetext=True)
             .withColumn("path", F.input_file_name())

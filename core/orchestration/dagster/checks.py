@@ -14,9 +14,9 @@ because both call the same ``validate_table``.
 
 from dagster import AssetCheckExecutionContext, AssetCheckResult, MetadataValue, asset_check
 
+from core.orchestration.dagster.resources import PlatformResource
 from core.transforms.registry import SILVER_TABLES
 from core.validation.validate import ValidationResult, validate_table
-from core.orchestration.dagster.resources import PlatformResource
 
 
 def _render_rules_table(result: ValidationResult) -> str:
