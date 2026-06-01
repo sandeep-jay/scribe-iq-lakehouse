@@ -1,0 +1,5 @@
+# Docs toolchain — mirrors the [project.optional-dependencies] docs extra in pyproject.toml.
+# Keep the two in sync. Used by .github/workflows/docs.yml for a fast, cache-keyed install
+# (the docs build does not need the runtime core/fabric dependencies).
+mkdocs-material>=9.5,<10
+pymdown-extensions>=10.7,<11

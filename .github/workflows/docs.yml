@@ -1,0 +1,86 @@
+name: docs build + deploy (GitHub Pages)
+
+# Builds the MkDocs Material site and deploys it to GitHub Pages via the Pages-artifact
+# mechanism (no gh-pages branch — avoids this repo's Azure DevOps dual-push).
+# One-time setup by the maintainer: Settings → Pages → Source = "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - "pyproject.toml"
+      # Generated docs are derived from these — rebuild so the published
+      # DATA_DICTIONARY / corpus schema can never be stale (gate below).
+      - "core/transforms/registry.py"
+      - "core/validation/**"
+      - "core/gold/encounter_summary.py"
+      - "core/scripts/gen_data_dictionary.py"
+      - "core/scripts/gen_corpus_schema.py"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deploys at once; let an in-progress publish finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-docs.txt
+            pyproject.toml
+
+      - name: Install docs + core tooling
+        run: |
+          python -m pip install --upgrade pip
+          # core is needed only for the generated-doc freshness gate below.
+          pip install -e ".[dev]"
+          pip install -r requirements-docs.txt
+
+      - name: Generated docs are current (data dictionary + corpus schema)
+        # Read-only --check (same hooks as .pre-commit-config.yaml): fails if
+        # docs/DATA_DICTIONARY.md or schemas/gold_encounter_summary.json drifted
+        # from the code, so the published site can never be stale.
+        run: |
+          python core/scripts/gen_data_dictionary.py --check
+          python core/scripts/gen_corpus_schema.py --check
+
+      - name: Build site (strict)
+        run: python -m mkdocs build --strict
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

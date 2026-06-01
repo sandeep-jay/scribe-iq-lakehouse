@@ -1,12 +1,12 @@
 """Generate docs/DATA_DICTIONARY.md from the Silver registry + validation rules.
 
 Generated-first documentation (ADR-011): the data dictionary is derived from the
-single source of truth — the Arrow schemas in ``local/transforms/registry.py`` and the
-rules in ``local/validation/schema_registry.py`` — so it can never drift from the code.
+single source of truth — the Arrow schemas in ``core/transforms/registry.py`` and the
+rules in ``core/validation/schema_registry.py`` — so it can never drift from the code.
 
 Usage:
-    python scripts/gen_data_dictionary.py            # write docs/DATA_DICTIONARY.md
-    python scripts/gen_data_dictionary.py --check     # exit 1 if the file is stale (CI)
+    python core/scripts/gen_data_dictionary.py            # write docs/DATA_DICTIONARY.md
+    python core/scripts/gen_data_dictionary.py --check     # exit 1 if the file is stale (CI)
 
 ``render()`` is pure (returns the markdown string) so tests can assert the committed
 file is current — see tests/test_docs_generated.py.
@@ -34,9 +34,9 @@ OUTPUT_PATH = _REPO_ROOT / "docs" / "DATA_DICTIONARY.md"
 _HEADER = """# Data Dictionary — Silver layer
 
 > **Generated file — do not edit by hand.** Regenerate with
-> `python scripts/gen_data_dictionary.py` whenever a Silver schema or validation rule
-> changes. Source of truth: `local/transforms/registry.py` (schemas) and
-> `local/validation/schema_registry.py` (rules). See ADR-009 / ADR-011.
+> `python core/scripts/gen_data_dictionary.py` whenever a Silver schema or validation rule
+> changes. Source of truth: `core/transforms/registry.py` (schemas) and
+> `core/validation/schema_registry.py` (rules). See ADR-009 / ADR-011.
 
 All Silver tables are Delta tables with Change Data Feed enabled
 (`delta.enableChangeDataFeed = true`). `source_file` and `ingest_timestamp` are

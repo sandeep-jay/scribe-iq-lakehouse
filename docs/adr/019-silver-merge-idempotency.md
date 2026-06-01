@@ -8,14 +8,14 @@
 
 The Silver write path on `LocalLitePlatform` (and, by ADR-002, every future
 platform tier) is "OVERWRITE on first write, MERGE on subsequent writes" — see
-[core/platform/local_lite.py:133](../../core/platform/local_lite.py#L133)
+[core/platform/local_lite.py:133](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/platform/local_lite.py#L133)
 (`_write_delta`). delta-rs's MERGE requires that for each row in the *target*
 table, at most one row in the *source* matches the predicate `target.pk =
 source.pk` — otherwise it errors with *"matched a target row with multiple
 source rows"*.
 
 Source-side duplicate prevention is in place: every `build_silver_*` calls
-`dedup_by_key()` ([core/transforms/schema_utils.py:119](../../core/transforms/schema_utils.py#L119))
+`dedup_by_key()` ([core/transforms/schema_utils.py:119](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/transforms/schema_utils.py#L119))
 before emitting its `pa.Table`, so any single MERGE invocation feeds delta-rs a
 key-unique source. This was added in Session 3 once the duplicate-FHIR-extract
 pattern was observed.
@@ -68,7 +68,7 @@ undefined survivor; this is acceptable because legacy dup state has no
 canonical row anyway.
 
 FabricPlatform (Phase 2 of the Session 5 plan,
-[docs/roadmap/fabric-execution-plan.md](../roadmap/fabric-execution-plan.md))
+[docs/roadmap/fabric-execution-plan.md](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/docs/roadmap/fabric-execution-plan.md))
 will implement the Spark equivalent: `df.dropDuplicates([pk])` rewrite on
 detection, same triggering condition.
 
@@ -94,7 +94,7 @@ detection, same triggering condition.
 - FabricPlatform inherits the same contract: implement the Spark equivalent in
   `_write_delta` and the same idempotency guarantee holds.
 - Regression test (`test_merge_dedupes_target_with_legacy_duplicates` in
-  [core/tests/test_local_lite.py](../../core/tests/test_local_lite.py)) pins the
+  [core/tests/test_local_lite.py](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/tests/test_local_lite.py)) pins the
   behaviour: a target with intentional dups must MERGE-then-dedupe in one call.
 
 **Negative:**
@@ -115,5 +115,5 @@ detection, same triggering condition.
 - ADR-015 / ADR-016 (Dagster — the materialize-partition affordance that
   surfaced this defect)
 - ADR-017 / ADR-018 (multi-platform layout — context for Fabric's matching impl)
-- [docs/roadmap/fabric-execution-plan.md](../roadmap/fabric-execution-plan.md)
+- [docs/roadmap/fabric-execution-plan.md](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/docs/roadmap/fabric-execution-plan.md)
   Phase 2 (Spark equivalent in FabricPlatform)

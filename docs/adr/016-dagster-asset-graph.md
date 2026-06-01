@@ -3,8 +3,8 @@
 **Date:** 2026-05-27
 **Status:** Accepted
 **Extends:** [ADR-015](015-dagster-local-orchestration.md) (the modelling decision under the
-adopted orchestrator); honours [ADR-002](002-platform-abstraction.md) (platform isolation) and
-[ADR-004](004-arrow-interchange.md) (Arrow interchange)
+adopted orchestrator); honours [ADR-002](../_archive/adr/002-platform-abstraction.md) (platform isolation) and
+[ADR-004](../_archive/adr/004-arrow-interchange.md) (Arrow interchange)
 **Contract impact:** none
 **Deciders:** Sandeep Jayaprakash
 

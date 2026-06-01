@@ -210,7 +210,7 @@ brew install duckdb                                  # needs DuckDB ≥1.2 (-ui 
 duckdb docs/demo/notebooks/demo.duckdb -ui           # opens http://localhost:4213
 ```
 
-20 SQL cells over the Delta tables; see [`docs/demo/notebooks/README.md`](demo/notebooks/README.md)
+20 SQL cells over the Delta tables; see [`docs/demo/notebooks/README.md`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/docs/demo/notebooks/README.md)
 for the per-cell guide and how to regenerate the `.duckdb` (gitignored) if missing.
 For recording a demo video around it, see [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
 
@@ -291,7 +291,7 @@ visibility into validation.
 ### Bronze cohort sensor (the demo)
 
 `bronze_cohort_sensor` is the Dagster analogue of the Auto Loader streaming-sim
-([spec §5.2](roadmap/scribe-iq-lakehouse-spec.md#52-streaming-simulation)). Every tick it
+([spec §5.2](roadmap/scribe-iq-lakehouse-spec.md)). Every tick it
 diffs cohort directories under `data/bronze/fhir/` against the registered dynamic
 partitions and, for each **new** cohort, fires a single `RunRequest` that materializes
 `bronze_fhir` **and all 10 Silver tables** for that partition — Bronze → Silver in one

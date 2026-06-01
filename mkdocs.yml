@@ -1,0 +1,151 @@
+# mkdocs.yml — scribe-iq-lakehouse documentation site
+# Serve:  mkdocs serve   ·   Build: mkdocs build   ·   Deploy: .github/workflows/docs.yml (GitHub Pages)
+# Install the toolchain with:  pip install -e ".[docs]"   (or: pip install -r requirements-docs.txt)
+
+site_name: scribe-iq-lakehouse
+site_description: >-
+  Production-pattern healthcare data lakehouse on Synthea Coherent — a medallion
+  (Bronze → Silver → Gold) implemented as two independent engine-native tiers
+  (LocalLite + Microsoft Fabric) that emit one governed Gold data contract.
+site_author: Sandeep Jayaprakash
+site_url: https://sandeep-jay.github.io/scribe-iq-lakehouse/
+
+repo_url: https://github.com/sandeep-jay/scribe-iq-lakehouse
+repo_name: sandeep-jay/scribe-iq-lakehouse
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+# Fail the build on broken internal links / nav issues. Source-file references are GitHub
+# blob URLs (resolved outside the site), so the strict build stays green.
+strict: true
+
+# Files copied into docs/ that must NOT ship to the published site. The internal session
+# plan and the notebook guide are excluded — they're working records that link to source
+# files, not reviewer-facing pages. The binary .duckdb is a build artifact.
+exclude_docs: |
+  demo/notebooks/*.duckdb
+  demo/notebooks/README.md
+  roadmap/fabric-execution-plan.md
+  **/.DS_Store
+
+# Built + published but deliberately absent from the sidebar (and silenced from the
+# "exists but not in nav" warning): superseded ADRs (linked from active ADRs) and the
+# multi-platform reorg planning note.
+not_in_nav: |
+  _archive/**
+  roadmap/multi-platform-reorg.md
+
+theme:
+  name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # SuperFences registers the mermaid custom fence so ```mermaid renders client-side.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sandeep-jay/scribe-iq-lakehouse
+      name: Source on GitHub
+
+nav:
+  - Home: index.md
+  - Reviewer Guide: reviewer-guide.md
+  - Architecture:
+      - System Overview: ARCHITECTURE.md
+  - Data Products & Contracts:
+      - Corpus Contract (Gold v1.1.0): CORPUS_CONTRACT.md
+      - Silver Data Dictionary: DATA_DICTIONARY.md
+      - Benchmarks & Baseline: BENCHMARKS.md
+  - Multi-Platform & Engine Parity:
+      - LocalLite vs Fabric (ADR-022): platforms/parity.md
+      - Fabric Deployment: platforms/fabric-deployment.md
+  - Healthcare & Responsible Data: responsible-data.md
+  - Case Study:
+      - Engineering Case Study: case-study.md
+      - Design Notes: design-notes.md
+  - Operations:
+      - Runbook: RUNBOOK.md
+      - Demo Playbook: demo/PLAYBOOK.md
+  - Downstream & Portfolio: portfolio.md
+  - Decisions (ADRs):
+      - Index: adr/README.md
+      - 001 · Fabric-first: adr/001-fabric-first.md
+      - 003 · Polars + DuckDB (LocalLite): adr/003-polars-duckdb-local.md
+      - 005 · FHIR Base64 SOAP decode: adr/005-fhir-binary-decode.md
+      - 006 · DICOM stop_before_pixels: adr/006-dicom-stop-before-pixels.md
+      - 007 · Genomic data_limitation column: adr/007-genomic-data-limitation.md
+      - 008 · Dict-based FHIR parsing: adr/008-dict-based-fhir-parsing.md
+      - 009 · Local Silver materialization: adr/009-local-silver-materialization.md
+      - 010 · PHI-safe logging: adr/010-phi-safe-logging.md
+      - 011 · Generated-first docs: adr/011-generated-first-docs.md
+      - 012 · Gold encounter_summary: adr/012-gold-encounter-summary.md
+      - 013 · DICOM ingest & linkage: adr/013-dicom-ingest-and-linkage.md
+      - 014 · Problem-list as-of-date: adr/014-problem-list-as-of-date.md
+      - 015 · Dagster local orchestration: adr/015-dagster-local-orchestration.md
+      - 016 · Medallion as Dagster asset graph: adr/016-dagster-asset-graph.md
+      - 017 · Multi-platform repo layout: adr/017-multi-platform-repo-layout.md
+      - 018 · Monorepo CI/CD (core wheel): adr/018-ci-cd-monorepo.md
+      - 019 · Silver MERGE idempotency: adr/019-silver-merge-idempotency.md
+      - 021 · Fabric .Notebook source: adr/021-fabric-notebook-source-of-truth.md
+      - 022 · Independent per-platform impls: adr/022-platform-independent-implementations.md
+  - Roadmap: roadmap/scribe-iq-lakehouse-spec.md
+  - Changelog: changelog.md
+  - About: about.md

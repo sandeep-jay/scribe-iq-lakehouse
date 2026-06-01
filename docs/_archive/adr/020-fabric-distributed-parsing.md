@@ -1,7 +1,7 @@
 # ADR-020: Fabric distributed parsing via `applyInPandas`
 
 **Date:** 2026-05-29
-**Status:** Superseded by [ADR-022](../adr/022-platform-independent-implementations.md) (same day, 2026-05-29)
+**Status:** Superseded by [ADR-022](../../adr/022-platform-independent-implementations.md) (same day, 2026-05-29)
 **Deciders:** Sandeep Jayaprakash
 
 > **Superseded same-day.** The `applyInPandas` bridge was a workaround for the

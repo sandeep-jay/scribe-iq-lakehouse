@@ -8,7 +8,7 @@
 ## Context
 
 The local Bronze → Silver → Gold pipeline is orchestrated *imperatively* by
-[`local/pipeline.py`](../../local/pipeline.py): a hand-rolled sequential driver
+[`local/pipeline.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/surfaces/cli/pipeline.py): a hand-rolled sequential driver
 (`run_pipeline` + `build_gold`) wired with `argparse`. It is correct, but flat — no DAG
 view, no per-table or per-cohort retry/backfill, no run history, and every full re-run is a
 destructive `rm -rf data/silver data/gold` rebuild (delta-rs MERGE cannot whole-table

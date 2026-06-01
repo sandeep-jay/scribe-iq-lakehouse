@@ -87,25 +87,26 @@ Delta table (overwrite + CDC) plus the corpus manifest.
 
 ## Engine comparison (target matrix)
 
-Same transforms, different platforms (one env var). Only `local_lite` is measured today.
+Independent engine-native tiers emitting the same Gold contract (ADR-022). LocalLite is measured
+on the full dataset; the Fabric tier ran green on F4 capacity against a 100-patient sample.
 
 | Capability | local_lite | local_spark | Fabric | Databricks | AWS | GCP |
 |------------|-----------|-------------|--------|------------|-----|-----|
-| Bronze→Silver (full) | ✅ 2m30s | — | 🔜 S5 | roadmap | roadmap | roadmap |
-| Silver→Gold (full) | ✅ ~6.5s | — | 🔜 S5 | roadmap | roadmap | roadmap |
-| CDC | ✅ | — | 🔜 | roadmap | roadmap | roadmap |
+| Bronze→Silver (full) | ✅ 2m30s | — | ✅ F4 (100-sample) | roadmap | roadmap | roadmap |
+| Silver→Gold (full) | ✅ ~6.5s | — | ✅ F4 (100-sample) | roadmap | roadmap | roadmap |
+| CDC | ✅ | — | ✅ | roadmap | roadmap | roadmap |
 | Streaming | sim only | — | 🔜 Auto Loader | roadmap | roadmap | roadmap |
 | Cost (1.3k pts) | $0 | $0 | trial | — | — | — |
 
 ## Execution surfaces
 
-Same transforms, three orchestrators (the concrete payoff of ADR-002 / ADR-004):
+Two LocalLite surfaces over the same pure transforms, plus the Fabric tier's own notebooks (ADR-022):
 
 | Surface | Where | Use it for |
 |---------|-------|-----------|
 | `core.surfaces.cli.pipeline` CLI | `core/surfaces/cli/pipeline.py` | Default, dependency-light, CI gate; full-rebuild + per-cohort flags |
 | **Dagster asset graph** | `core/orchestration/dagster/` (ADR-015/016) | Per-cohort backfill via UI, `validate_table` as asset checks (rule-by-rule pass/fail in metadata), sensor on `data/bronze/fhir/`, run history. Each asset's `MaterializeResult` carries schema + sample rows + sample-bundle/SOAP-card markdown so clicking a node shows what materialized |
-| Fabric notebooks | `fabric/notebooks/` (Session 5) | Same transforms over Spark + OneLake; Auto Loader streaming |
+| Fabric notebooks | `fabric/notebooks/` 00–10 | Fabric tier's Spark-native impl over OneLake (ADR-022); green on F4 (100-sample) |
 
 Dagster timings track the CLI numbers above (the work is in the transforms; orchestration
 overhead is ~ms per asset on the fixture). No standalone benchmark — the value is the
@@ -122,7 +123,7 @@ read-only over the existing Delta tables):
 | `docs/demo/notebooks/demo_notebook.sql` | DuckDB UI, 20 SQL cells | Corpus headlines, top conditions, as-of-date condition growth, full SOAP notes, keyword cohort search |
 | `docs/demo/PLAYBOOK.md` | recording guide | 5-beat demo video script + take-by-take recording sequence |
 
-All three render via `local/preview.py`, so the Dagster asset metadata, the CLI walkthrough,
+All three render via `core/preview.py`, so the Dagster asset metadata, the CLI walkthrough,
 and the SQL notebook present the same data shape.
 
 ## Reproduce
@@ -146,4 +147,5 @@ python -m core.surfaces.cli.pipeline --gold-only                        # rebuil
 - `local_lite` holds one cohort's records in memory at a time (~1/3 of the data); peak
   RSS stayed well under what a typical dev laptop offers. Full-dataset-in-memory was
   deliberately avoided.
-- Fabric/Spark figures will be filled in when those platforms are implemented (Session 5).
+- Fabric/Spark full-run figures will be filled in after the full 1,278-bundle re-run; the
+  100-patient F4 run is green end-to-end (notebooks 00–10).
