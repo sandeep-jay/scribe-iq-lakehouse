@@ -6,6 +6,11 @@ in-progress.
 
 ## Pick a depth
 
+=== "Not technical?"
+
+    **New to data engineering?** In one line: this turns raw hospital-style data into one clean,
+    trusted dataset for AI — built to run on a laptop and in the cloud, on synthetic data only.
+
 === "90 seconds"
 
     1. Read the [Home](index.md) hero + the **What this shows** evidence table.

@@ -7,15 +7,20 @@
 ![Gold contract](https://img.shields.io/badge/Gold%20contract-v1.1.0-orange)
 ![Runs](https://img.shields.io/badge/runs-laptop%20%C2%B7%20Microsoft%20Fabric-0078D4)
 
-**A production-pattern healthcare data lakehouse: a Bronze → Silver → Gold medallion over
-multimodal [Synthea Coherent](https://registry.opendata.aws/synthea-coherent-data/) FHIR (R4),
-turning raw clinical bundles into one governed, versioned Gold data contract.**
+This project takes raw, messy, hospital-style patient data and turns it into one clean, reliable,
+well-documented dataset that AI systems can safely build on. It's engineered to run the same way on
+a laptop or in the cloud, using only synthetic (non-real) patient data.
 
-Built twice, on purpose — **Polars + delta-rs + DuckDB** on a laptop and **Spark + Delta +
-OneLake** on **Microsoft Fabric** — orchestrated as a **Dagster** asset graph, with a
-**streaming-ingest simulation** of Fabric's Auto Loader. Two independent, engine-native
-implementations converge on the *same* contract by schema parity and a lockstep version, not
-shared code ([ADR-022](adr/022-platform-independent-implementations.md)).
+!!! abstract "For technical reviewers"
+    **A production-pattern healthcare data lakehouse: a Bronze → Silver → Gold medallion over
+    multimodal [Synthea Coherent](https://registry.opendata.aws/synthea-coherent-data/) FHIR (R4),
+    turning raw clinical bundles into one governed, versioned Gold data contract.**
+
+    Built twice, on purpose — **Polars + delta-rs + DuckDB** on a laptop and **Spark + Delta +
+    OneLake** on **Microsoft Fabric** — orchestrated as a **Dagster** asset graph, with a
+    **streaming-ingest simulation** of Fabric's Auto Loader. Two independent, engine-native
+    implementations converge on the *same* contract by schema parity and a lockstep version, not
+    shared code ([ADR-022](adr/022-platform-independent-implementations.md)).
 
 > 22 ADRs · 129 fixture-only tests · generated-first docs · three orchestration surfaces · full local run in ~2.5 min.
 

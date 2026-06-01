@@ -1,5 +1,9 @@
 # scribe-iq-lakehouse
 
+This project takes raw, messy, hospital-style patient data and turns it into one clean, reliable,
+well-documented dataset that AI systems can safely build on. It's built to run the same way on a
+laptop or in the cloud, on synthetic (non-real) patient data only.
+
 Production-pattern healthcare data lakehouse on [Synthea Coherent](https://registry.opendata.aws/synthea-coherent-data/)
 (1,278 patients → 1,280 FHIR R4 bundles): a **Bronze → Silver → Gold medallion** that turns raw
 multimodal clinical bundles into one governed, **versioned, test-gated** Gold data contract.
