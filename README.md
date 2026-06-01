@@ -26,17 +26,33 @@ industrializes that foundation the rigorous way; next, a **roadmap** Ollama loop
 **Status:** Bronze → Silver → **Gold** fully built and run end-to-end on the complete
 1,278-patient dataset on the LocalLite tier (143,946 encounter summaries). DICOM imaging
 headers ingested. **Dagster** local orchestration renders the medallion as a software-defined
-asset graph (a third local execution surface alongside the CLI). The **Fabric tier** ran green
+asset graph (a second local execution surface alongside the CLI). The **Fabric tier** ran green
 end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,280-bundle
 re-run is pending. Synthetic data only — **no PHI**.
 
-```
- AWS Open Data S3      Bronze (raw, append-only)       Silver (10 typed Delta tables)        Gold
- coherent/  ─►  streaming_sim ─►  fhir· dicom· csv  ─►  Polars + delta-rs (local)         ─►  gold.encounter_summary
- (no creds)     (Auto Loader sim)  + manifests           / Spark from_json (Fabric)            1 row/encounter · contract v1.1.0
-                                                          CDC · validated (Dagster checks)     └─► clinical-bert · scribe-iq via Ollama (roadmap)
-
-  local surfaces share one transform set: CLI · Dagster asset graph (core/orchestration/dagster/)  |  Fabric tier reimplements its own (ADR-022)
+```mermaid
+flowchart LR
+    S3["AWS Open Data S3<br/>Synthea Coherent · FHIR R4<br/>1,278 patients · ~4.6 GiB"]
+    subgraph LH["scribe-iq-lakehouse — Bronze → Silver → Gold (built twice)"]
+        direction TB
+        BR["Bronze<br/>raw, append-only"]
+        SV["Silver — 10 typed Delta tables · CDC · validated<br/>LocalLite: Polars + delta-rs   ·   Fabric: Spark from_json"]
+        GD["Gold<br/>gold.encounter_summary · 143,946 rows · 1 / encounter"]
+        BR --> SV --> GD
+    end
+    S3 --> BR
+    GD ==>|contract v1.1.0 · versioned · test-gated| C
+    subgraph C["Downstream AI consumers"]
+        direction TB
+        BERT["clinical-bert-pipeline · NLP"]
+        OLL["Ollama pipeline (roadmap)<br/>→ scribe-iq RAG corpus"]
+    end
+    classDef plat fill:#eef2ff,stroke:#6366f1;
+    classDef cons fill:#f0fdf4,stroke:#22c55e;
+    classDef road fill:#fff7ed,stroke:#f59e0b,stroke-dasharray:4 3;
+    class LH plat
+    class C cons
+    class OLL road
 ```
 
 ---
@@ -63,7 +79,7 @@ records = FHIRBundleParser().parse_bundle(bundle)
 #  -> {"patient": [...], "encounter": [...], "soap_note": [...], "condition": [...], ...}
 ```
 
-Run the whole lakehouse locally (downloads ~4.6 GB FHIR, then builds Silver + Gold):
+Run the whole lakehouse locally (downloads ~4.6 GiB FHIR, then builds Silver + Gold):
 
 ```bash
 python -m core.ingest.download --bronze-root data/bronze   # FHIR → Bronze (~18 min, network-bound)
@@ -135,6 +151,32 @@ the local storage root is `data/` (override with `LAKEHOUSE_LOCAL_ROOT`). Nothin
 See **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the as-built diagram and module map, and the
 [ADRs](docs/adr/README.md) for *why*.
 
+The headline decision — two independent, engine-native tiers converging on one governed contract
+([ADR-022](docs/adr/022-platform-independent-implementations.md)):
+
+```mermaid
+flowchart TB
+    subgraph CORE["core/ — LocalLite tier (laptop, $0)"]
+        direction TB
+        C1["Polars + delta-rs + DuckDB"]
+        C2["own transforms<br/>core/transforms/silver_*.py → pa.Table"]
+        C1 --> C2
+    end
+    subgraph FAB["fabric/ — Fabric tier (Spark / OneLake)"]
+        direction TB
+        F1["Spark + Delta + OneLake"]
+        F2["own transforms<br/>fabric/transforms/silver_*.py → Spark DataFrame"]
+        F1 --> F2
+    end
+    CONTRACT{{"Gold contract — gold.encounter_summary v1.1.0<br/>schema parity + lockstep CONTRACT_VERSION<br/>(compatibility, NOT shared code)"}}
+    C2 --> CONTRACT
+    F2 --> CONTRACT
+    NOTE["Rejected: one shared transform layer<br/>(lowest-common-denominator + applyInPandas bridge tax) → ADR-022"]
+    NOTE -.-> CONTRACT
+    classDef contract fill:#eef2ff,stroke:#6366f1,font-weight:bold;
+    class CONTRACT contract
+```
+
 - **Independent per-platform implementations** ([ADR-022](docs/adr/022-platform-independent-implementations.md)) —
   each tier owns its complete Silver + Gold + validation stack written engine-native: `core/`
   (LocalLite) transforms return `pyarrow.Table` (Polars + delta-rs); `fabric/` transforms return
@@ -198,7 +240,7 @@ core/                               ← platform-agnostic kernel; built as a whe
   tests/  scripts/  docs/
 
 fabric/                             ← Fabric tier; consumes `core` wheel via Environment
-  platform.py                       ← FabricPlatform(LakehousePlatform) — Session 5
+  platform.py                       ← FabricPlatform — Spark-native, independent (ADR-022)
   notebooks/                        ← Git-Integration-synced to the workspace
   environments/                     ← Fabric Environment spec (wheel + Spark config)
   deploy/                           ← fabric-cicd config + REST upload helper
@@ -207,7 +249,7 @@ fabric/                             ← Fabric tier; consumes `core` wheel via E
 
 databricks/  aws/                   ← future siblings (same shape as fabric/)
 
-.github/workflows/                  ← core-build · core-pr-tests · fabric-deploy
+.github/workflows/                  ← core-build · core-pr-tests · docs (fabric/databricks/aws-deploy disabled)
 docs/adr/  docs/roadmap/            ← ADRs + planning docs
 schemas/                            ← machine-readable corpus JSON Schema
 ```

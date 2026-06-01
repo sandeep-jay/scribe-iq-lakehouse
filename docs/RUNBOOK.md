@@ -4,7 +4,8 @@ Operational procedures for ingesting, building, verifying, and troubleshooting t
 on the `local_lite` platform (Polars + delta-rs, zero cloud). The local stack ships with two
 execution surfaces — the `core.surfaces.cli.pipeline` CLI (default, dependency-light, the CI path) and
 a **Dagster** asset graph (`core/orchestration/dagster/`, ADR-015/016, optional `[orchestration]` extra);
-both reuse the same pure transforms. Fabric procedures land with the notebooks in Session 5.
+both reuse the same pure transforms. Fabric deployment is covered separately in the
+[Fabric Deployment](platforms/fabric-deployment.md) guide.
 For *why* the system is shaped this way, see [ARCHITECTURE.md](ARCHITECTURE.md) and the
 [ADRs](adr/README.md); for reference numbers, see [BENCHMARKS.md](BENCHMARKS.md).
 
