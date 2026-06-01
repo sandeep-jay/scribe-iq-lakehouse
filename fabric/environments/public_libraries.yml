@@ -1,0 +1,24 @@
+# Fabric Environment — Public Libraries import
+#
+# Paste-and-import in the Fabric UI:
+#   Environment scribe-iq-lakehouse-env → Public Libraries →
+#   Import from .yml file → upload this file → Publish.
+#
+# Conda-style env file with one pip block — the only format Fabric's import
+# accepts. Custom Libraries (the core wheel) are uploaded separately via
+# Custom Libraries → Upload.
+#
+# What's here:
+#   boto3 — anonymous S3 client used by 01_bronze_ingest to pull Synthea
+#           Coherent bundles from s3://synthea-open-data/coherent/unzipped/fhir/
+#           (also gated as Check 4 in 00_setup).
+#
+# What's NOT here, intentionally (ADR-022 — pure-Spark fabric tier):
+#   pyarrow         — Fabric runtime ships it; fabric/* never imports it.
+#   pydicom         — LocalLite-tier dependency only; fabric silver_imaging is FHIR-only.
+#   python-dateutil — not needed; date parsing is F.to_timestamp / F.to_date in Spark.
+
+dependencies:
+  - pip:
+    - boto3==1.35.36
+    - botocore==1.35.36

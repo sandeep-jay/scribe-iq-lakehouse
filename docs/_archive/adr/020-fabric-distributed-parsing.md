@@ -1,8 +1,15 @@
 # ADR-020: Fabric distributed parsing via `applyInPandas`
 
 **Date:** 2026-05-29
-**Status:** Accepted
+**Status:** Superseded by [ADR-022](../adr/022-platform-independent-implementations.md) (same day, 2026-05-29)
 **Deciders:** Sandeep Jayaprakash
+
+> **Superseded same-day.** The `applyInPandas` bridge was a workaround for the
+> shared-builder model imposed by ADR-002 / ADR-004. ADR-022 removed that
+> constraint by giving Fabric its own Spark-native transforms; the bridge is
+> gone and `fabric/spark_helpers.py` was deleted. Preserved here for
+> historical context — the trade-off discussion still illustrates *why*
+> shared builders + cloud-native engines don't compose cleanly.
 
 ## Context
 

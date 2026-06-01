@@ -1,8 +1,13 @@
 # ADR-004: Arrow as transform interchange format
 
 **Date:** 2026-05-27
-**Status:** Accepted
+**Status:** Superseded by [ADR-022](../adr/022-platform-independent-implementations.md) (2026-05-29)
 **Deciders:** Sandeep Jayaprakash
+
+> **Superseded.** `pa.Table` is no longer the cross-platform interchange type.
+> It remains the interchange type *within* `core/` — LocalLite transforms still
+> return `pa.Table` — but cloud-native tiers use their engine's native frame
+> (Spark DataFrame on Fabric). Preserved here for historical context.
 
 ## Context
 

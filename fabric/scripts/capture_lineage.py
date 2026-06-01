@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 def main() -> None:
+    """Entry point — capture Fabric Lakehouse lineage (stub, pending Session 5)."""
     raise NotImplementedError("Fabric lineage capture pending Session 5")
 
 

@@ -21,8 +21,8 @@ from core.gold.encounter_summary import (
     SILVER_SOURCES,
     build_encounter_summary,
 )
-from core.transforms.registry import SILVER_TABLES
 from core.scripts.gen_corpus_schema import OUTPUT_PATH, _serialize, render_schema
+from core.transforms.registry import SILVER_TABLES
 
 INGEST_TS = datetime(2026, 5, 27, tzinfo=UTC)
 CREATED_TS = datetime(2026, 5, 27, 12, 0, tzinfo=UTC)

@@ -7,8 +7,9 @@ and clinical-bert-pipeline (NLP). Ollama generation pipeline produces patient-li
 clinical dialogues from Gold encounter_summary.
 
 ## Execution context
-- Fabric trial active — Fabric notebooks are the priority surface
-- LAKEHOUSE_PLATFORM env var controls execution environment
+- Paid Fabric capacity active — Fabric notebooks are the priority surface
+- Fabric notebooks instantiate `FabricPlatform()` directly (no factory, no env var) — ADR-022
+- Local CLI / Dagster path uses LAKEHOUSE_PLATFORM (default `local_lite`) — factory dispatches local surfaces only
 - Capture Fabric screenshots as you go (trial-window evidence)
 
 ## System context
@@ -18,33 +19,46 @@ Produces: gold.encounter_summary → scribe-iq (RAG) + clinical-bert-pipeline (N
 Upstream of: scribe-iq (replaces 19-patient dev corpus with 1,500-patient corpus)
 
 ## Architecture principles
-- Two top-level domains: `core/` (platform-agnostic + local execution surface)
-  and `fabric/` (Fabric-specific impl + notebooks + deploy). Future Databricks
-  and AWS land as siblings to `fabric/`. See ADR-017, docs/roadmap/multi-platform-reorg.md
-- One-way dependency: `fabric/` → `core/`. `core/` NEVER imports from `fabric/`,
-  `databricks/`, or `aws/`. Enforced by transform/notebook rules below.
-- `core/` is a versioned wheel — every platform tier consumes it as a library,
-  not source files (ADR-018).
-- Platform abstraction: ALL cloud I/O via core/platform/ — never directly in transforms/
-- Arrow interchange: transforms return pa.Table, never Spark DataFrames or Polars frames
-- Pure transforms: no file paths, no platform imports in core/transforms/
-- Notebooks import from core.transforms — zero duplicate logic
-- Every notebook follows the 8-cell documentation template
+- Two top-level domains today: `core/` (LocalLite execution + Dagster + CLI)
+  and `fabric/` (Spark-native end-to-end on Microsoft Fabric). Future
+  Databricks and AWS land as siblings to `fabric/`. See ADR-017, ADR-022,
+  docs/roadmap/multi-platform-reorg.md
+- **Independent per-platform implementations (ADR-022).** Each tier owns
+  its complete Silver + Gold + validation stack written for its engine
+  native:
+  - `core/transforms/` returns `pa.Table` (Polars + delta-rs path)
+  - `fabric/transforms/` returns Spark DataFrames (Spark + Delta path)
+  - Cross-tier compatibility is by schema parity + lockstep
+    `CONTRACT_VERSION` bumps, not by code sharing.
+- One-way dependency on shared utilities only: cloud tiers may import
+  narrow utilities (e.g. `core.redaction`) from the wheel; cloud tiers
+  do NOT import transform / Gold / validation logic from `core/`. `core/`
+  never imports from `fabric/`, `databricks/`, or `aws/`.
+- `core/` ships as a versioned wheel that includes `fabric/` (ADR-018);
+  Fabric Environment installs the wheel and imports only `fabric.*`.
+- Pure transforms: no file paths, no platform imports anywhere under
+  `core/transforms/` or `fabric/transforms/`.
+- Every notebook follows the cell-by-cell template in
+  `.claude/rules/notebooks.md`.
 - Full spec: docs/roadmap/scribe-iq-lakehouse-spec.md
 
 ## Non-negotiables
 1. Never hardcode OneLake paths — always platform.storage_path()
-2. Never import Fabric/Spark in core/transforms/
-3. `core/` never imports from `fabric/`, `databricks/`, or `aws/` (one-way dependency)
-4. Every new transform gets a test in core/tests/ alongside implementation
-5. Every architectural decision gets an ADR in docs/adr/
-6. CDC enabled on all Silver tables: delta.enableChangeDataFeed = true
-7. data_limitation column always populated in silver.genomic_report
-8. pydicom stop_before_pixels=True everywhere — never load pixel data
-9. No credentials in notebooks — Fabric Environment Variables or Key Vault only
-10. Session ends with updated HANDOFF.md
-11. Logs never contain raw patient/encounter identifiers or bundle filenames —
+2. Never import Spark / notebookutils / delta in `core/transforms/` (LocalLite stays pure-Python)
+3. Never import `core.transforms.*` or `core.gold.*` from `fabric/` — independent impl (ADR-022)
+4. `core/` never imports from `fabric/`, `databricks/`, or `aws/` (one-way)
+5. Every new transform gets a test alongside implementation (`core/tests/` for core, `fabric/tests/` for fabric)
+6. Every architectural decision gets an ADR in docs/adr/
+7. CDC enabled on all Silver tables: delta.enableChangeDataFeed = true
+8. data_limitation column always populated in silver.genomic_report (ADR-007)
+9. pydicom stop_before_pixels=True everywhere it appears — never load pixel data (ADR-006)
+10. No credentials in notebooks — Fabric Environment Variables or Key Vault only
+11. Session ends with updated HANDOFF.md
+12. Logs never contain raw patient/encounter identifiers or bundle filenames —
     redact identifier-bearing values via core.redaction.redact() (ADR-010)
+13. Cross-platform schema parity — `core.gold.encounter_summary.CONTRACT_VERSION`
+    and `fabric.gold.encounter_summary.CONTRACT_VERSION` bump in lockstep on any
+    Gold change (ADR-022)
 
 ## Session protocol
 START: Read HANDOFF.md → state current status in 3 sentences → begin first task
@@ -67,19 +81,27 @@ it belongs in CHANGELOG.
   docs/adr/                                  ADRs — read before touching architecture
   HANDOFF.md                                 Current session state (updated every session)
   CHANGELOG.md                               All meaningful changes
-  core/platform/base.py                      Platform abstraction interface (ADR-002)
+  core/platform/base.py                      LakehousePlatform ABC (LocalLite only post-ADR-022)
   core/platform/local_lite.py                LocalLitePlatform (Polars + delta-rs)
-  core/transforms/                           Engine-agnostic transform logic (pure Python)
-  core/transforms/registry.py                Silver table → schema/key/build mapping
-  core/validation/                           Schema registry + quality checks → ingest_log
+  core/transforms/                           LocalLite Silver builders (pure Python, return pa.Table)
+  core/transforms/registry.py                LocalLite Silver registry
+  core/gold/encounter_summary.py             LocalLite Gold builder + CONTRACT_VERSION
+  core/validation/                           LocalLite validation rules + checks → ingest_log
   core/orchestration/dagster/                Dagster asset graph (local-only, ADR-015/016)
   core/surfaces/cli/pipeline.py              Local Bronze → Silver → Gold CLI orchestration
   core/redaction.py                          PHI-safe log references (ADR-010)
-  fabric/platform.py                         FabricPlatform (consumes core via wheel)
-  fabric/notebooks/                          Fabric execution notebooks (00–10, .Notebook/ format only — ADR-021)
-  fabric/spark_helpers.py                    Spark distribution helpers (ADR-020): pa→Spark schema, applyInPandas parser factory
+  fabric/platform.py                         FabricPlatform (Spark-native, independent — ADR-022)
+  fabric/transforms/                         Fabric Silver builders (return Spark DataFrame, from_json + BUNDLE_SCHEMA)
+  fabric/transforms/registry.py              Fabric Silver registry
+  fabric/gold/encounter_summary.py           Fabric Gold builder + CONTRACT_VERSION (match core's)
+  fabric/validation/                         Fabric Silver validation (single .agg() per table)
+  fabric/notebooks/                          Fabric execution notebooks (00 + 02–10, .Notebook/ format — ADR-021)
   fabric/deploy/                             fabric-cicd config + wheel upload helpers
-  .github/workflows/                         core-build · core-pr-tests · fabric-deploy
+  docs/adr/                                  Active ADRs (read before touching architecture)
+  docs/_archive/adr/                         Superseded ADRs (002/004/020 → ADR-022)
+  HANDOFF.md                                 Current session state
+  CHANGELOG.md                               All meaningful changes
+  .github/workflows/                         core-build · core-pr-tests · fabric-deploy (manual)
 
 ## Claude Code config
   .claude/settings.json        Tracked: curated allow globs + deny + hooks (portable paths)

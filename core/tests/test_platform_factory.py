@@ -1,10 +1,11 @@
-"""Tests for the platform abstraction factory and base contract (ADR-002).
+"""Tests for the platform abstraction factory and base contract.
 
-``local_lite`` is implemented (Session 2); ``fabric`` is a stub that imports cleanly
-but raises ``NotImplementedError`` on every method (Session 4.5, ADR-017). The other
-platforms (databricks, aws, gcp, local_spark) are still un-built — their import paths
-point at modules that don't exist, so requesting them raises ImportError. The factory's
-job is to route by the LAKEHOUSE_PLATFORM env var and reject unknown names.
+This factory only dispatches local execution surfaces that share the
+``LakehousePlatform`` ABC — ``local_lite`` (built) and ``local_spark``
+(stub, no module yet). Per ADR-022, cloud-native platforms (Fabric,
+Databricks, AWS, GCP) are independent end-to-end implementations and are
+instantiated directly inside their own notebooks / entry points; they do
+not go through this factory.
 """
 
 import pytest
@@ -18,28 +19,28 @@ def test_unknown_platform_raises_value_error():
         factory.get_platform("does-not-exist")
 
 
+def test_fabric_not_in_factory():
+    """Fabric is an independent impl (ADR-022) — not dispatched through this factory."""
+    assert "fabric" not in factory.PLATFORMS
+    with pytest.raises(ValueError, match="Unknown platform"):
+        factory.get_platform("fabric")
+
+
 def test_explicit_arg_overrides_env_var(monkeypatch):
-    # Env says local_lite, but the explicit arg (databricks, no module yet) wins —
+    # Env says local_lite, but the explicit arg (local_spark, no module yet) wins —
     # the ImportError proves the module path was resolved from the arg, not the env.
     monkeypatch.setenv(factory.ENV_VAR, "local_lite")
     with pytest.raises(ImportError):
-        factory.get_platform("databricks")
+        factory.get_platform("local_spark")
 
 
 def test_unbuilt_platform_raises_import_error():
     with pytest.raises(ImportError):
-        factory.get_platform("aws")
+        factory.get_platform("local_spark")
 
 
 def test_registered_platforms_present():
-    assert set(factory.PLATFORMS) == {
-        "fabric",
-        "databricks",
-        "aws",
-        "gcp",
-        "local_spark",
-        "local_lite",
-    }
+    assert set(factory.PLATFORMS) == {"local_spark", "local_lite"}
 
 
 def test_default_platform_is_local_lite(monkeypatch):

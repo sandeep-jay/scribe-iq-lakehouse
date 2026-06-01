@@ -1,34 +1,34 @@
-# Fabric Environment spec — defines the Python runtime that backs the workspace
-# notebooks. Built by `fabric/deploy/upload_wheel.py` on every push to main and
-# referenced by every notebook's "Environment" setting.
+# Fabric Environment spec — documentation of the runtime that backs the workspace
+# notebooks. The Fabric UI doesn't import this file as-is (use
+# ``public_libraries.yml`` for the pip block + the Custom Libraries upload for
+# the wheel); this one captures everything in one place for reviewers.
 #
-# Stub. Session 5 fills in the real values and wires the upload helper.
+# Environment name: ``scribe-iq-lakehouse-env``.
+# Referenced by every notebook's "Environment" dropdown.
 
 name: scribe-iq-lakehouse-env
-runtime: "1.3"   # Fabric Runtime version (Spark 3.5)
+runtime: "1.3"   # Fabric Runtime version (Spark 3.5, Delta 3.x)
 
-# Python packages installed into the environment. The core wheel is uploaded
-# separately via Fabric REST API (`fabric/deploy/upload_wheel.py`) so it can
-# be versioned per release.
-python:
-  packages:
-    - pyarrow>=15.0
-    - pydicom>=2.4
-    - python-dateutil>=2.9
-    - boto3>=1.34   # anonymous S3 client for the Synthea Coherent public bucket
-                    # (used by notebook 01_bronze_ingest — no AWS account needed)
+# Public libraries — pip-installable from PyPI, pinned for reproducibility.
+# Import file: fabric/environments/public_libraries.yml
+public_libraries:
+  - boto3==1.35.36     # anonymous S3 client for the Synthea Coherent public bucket
+  - botocore==1.35.36  # boto3's HTTP layer; pinned to the matching minor for safety
 
-# Spark configuration overrides. Tuned for the medallion workload — small
-# encounter-summary builds, mostly Delta MERGE on cohort partitions.
+# Custom library — the project wheel built by ``python -m build --wheel``.
+# Uploaded manually via Custom Libraries → Upload (or programmatically by
+# ``fabric/deploy/upload_wheel.py`` once Service Principal is registered).
+# Provides ``fabric.platform`` + ``fabric.transforms.*`` + ``fabric.gold.*`` +
+# ``fabric.validation.*`` (and the un-used-on-Fabric ``core.*`` modules).
+custom_libraries:
+  - name: scribe-iq-lakehouse
+    type: wheel
+    artifact: dist/scribe_iq_lakehouse-0.1.0-py3-none-any.whl
+
+# Spark configuration overrides. Tuned for the medallion workload — small-
+# to-medium encounter-summary builds, mostly Delta MERGE on cohort partitions.
 spark:
   pool: starter   # change to a custom pool for larger cohorts in production
   config:
     spark.sql.adaptive.enabled: "true"
     spark.databricks.delta.merge.repartitionBeforeWrite.enabled: "true"
-
-# Wheel uploaded by `fabric/deploy/upload_wheel.py` after `python -m build core/`.
-# Pinned per release tag.
-custom_libraries:
-  - name: scribe-iq-lakehouse-core
-    type: wheel
-    version: "${CORE_WHEEL_VERSION}"   # set by CI from the release tag

@@ -16,11 +16,13 @@ import os
 from core.platform.base import LakehousePlatform
 
 #: Env var key -> ``"module.path.ClassName"`` for each supported platform.
+#:
+#: Fabric / Databricks / AWS / GCP are not listed here: per ADR-022 each
+#: cloud-native tier is an independent end-to-end implementation with its
+#: own entry point (e.g. ``fabric.platform.FabricPlatform`` instantiated
+#: directly inside Fabric notebooks). This factory dispatches only the
+#: local execution surfaces that share the ``LakehousePlatform`` ABC.
 PLATFORMS: dict[str, str] = {
-    "fabric": "fabric.platform.FabricPlatform",
-    "databricks": "databricks.platform.DatabricksPlatform",
-    "aws": "aws.platform.AWSPlatform",
-    "gcp": "gcp.platform.GCPPlatform",
     "local_spark": "core.platform.local_spark.LocalSparkPlatform",
     "local_lite": "core.platform.local_lite.LocalLitePlatform",
 }
