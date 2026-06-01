@@ -65,7 +65,7 @@ governed contract.**
 
     ---
 
-    What this is, how to read it, and what's real vs in-progress.
+    New here? Start here — what this is, how to read it, and what's real vs in-progress.
 
     [:octicons-arrow-right-24: Reviewer Guide](reviewer-guide.md)
 
@@ -103,7 +103,7 @@ Engineering first; every claim pairs a competence with a checkable number from a
 | Capability | Evidence (real run) |
 |---|---|
 | **Multi-platform engine parity** | The same medallion on LocalLite (Polars/delta-rs) and Fabric (Spark/OneLake) — independent implementations, one contract ([ADR-022](adr/022-platform-independent-implementations.md)) |
-| **Multiple orchestration surfaces** | The same transforms via CLI · Dagster asset graph (cohort partitions, `validate_table` as asset checks) · Fabric notebooks 00–10 |
+| **Multiple orchestration surfaces** | Two local surfaces share one transform set — CLI · Dagster asset graph (cohort partitions, `validate_table` as asset checks); the Fabric tier reimplements as its own notebooks 00–10 ([ADR-022](adr/022-platform-independent-implementations.md)) |
 | **Streaming-shaped ingest** | Cohort-partition replay simulating Fabric Auto Loader → `core/ingest/streaming_sim.py` |
 | **Contract governance** | `gold.encounter_summary` **v1.1.0** — semver + test-gated; downstream consumers pin the major version |
 | Healthcare data engineering at scale | 1,280 FHIR bundles (1,278 patients, 4.6 GiB) → 10 typed Silver Delta tables; **669,898** observations |
@@ -153,7 +153,9 @@ The medallion, with the **engine named at every hop**:
 - **Gold** — a **Polars** join/aggregation denormalizes Silver into a single
   `gold.encounter_summary` (one row per encounter) under the **versioned contract**.
 
-The *same transforms run three ways*: the CLI, the Dagster asset graph, and the Fabric notebooks.
+The same LocalLite transforms run under **two surfaces** — the CLI and the Dagster asset graph; the
+Fabric tier is a third surface that runs its **own** engine-native transforms
+([ADR-022](adr/022-platform-independent-implementations.md)), not the same code.
 
 ```mermaid
 flowchart TB
@@ -212,7 +214,7 @@ clinical text. Change the corpus once, behind the contract, and every downstream
 ```mermaid
 flowchart LR
     GD["gold.encounter_summary<br/>governed contract v1.1.0"]
-    OLL["Ollama generation pipeline<br/>(roadmap / in progress)"]
+    OLL["Ollama generation pipeline<br/>(roadmap — not built)"]
     NOTES["synthetic unstructured<br/>notes + dialogues"]
     SIQ["scribe-iq<br/>clinical RAG corpus"]
     BERT["clinical-bert-pipeline"]

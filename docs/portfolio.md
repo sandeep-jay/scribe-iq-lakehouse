@@ -25,7 +25,7 @@ both the platform and the AI product on top of it.
 ```mermaid
 flowchart LR
     GD["gold.encounter_summary<br/>governed contract v1.1.0"]
-    OLL["Ollama generation pipeline<br/>(roadmap / in progress)"]
+    OLL["Ollama generation pipeline<br/>(roadmap — not built)"]
     NOTES["synthetic unstructured<br/>notes + dialogues"]
     SIQ["scribe-iq<br/>clinical RAG corpus"]
     BERT["clinical-bert-pipeline"]
@@ -37,8 +37,8 @@ flowchart LR
 
 !!! note "Status — the loop is roadmap"
     `scribe-iq`'s **current** corpus is the heuristic assembly above, **not** this lakehouse. The
-    Ollama generation pipeline that turns Gold into `scribe-iq`'s next corpus is planned / in
-    progress. This page describes the intended direction.
+    Ollama generation pipeline that turns Gold into `scribe-iq`'s next corpus is planned — not yet
+    built. This page describes the intended direction.
 
 ## The contract is the interface
 

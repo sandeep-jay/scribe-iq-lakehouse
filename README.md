@@ -27,7 +27,7 @@ industrializes that foundation the rigorous way; next, a **roadmap** Ollama loop
 1,278-patient dataset on the LocalLite tier (143,946 encounter summaries). DICOM imaging
 headers ingested. **Dagster** local orchestration renders the medallion as a software-defined
 asset graph (a third local execution surface alongside the CLI). The **Fabric tier** ran green
-end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,278-bundle
+end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,280-bundle
 re-run is pending. Synthetic data only — **no PHI**.
 
 ```
@@ -36,7 +36,7 @@ re-run is pending. Synthetic data only — **no PHI**.
  (no creds)     (Auto Loader sim)  + manifests           / Spark from_json (Fabric)            1 row/encounter · contract v1.1.0
                                                           CDC · validated (Dagster checks)     └─► clinical-bert · scribe-iq via Ollama (roadmap)
 
-  execution surfaces (same transforms): CLI · Dagster asset graph (core/orchestration/dagster/) · Fabric notebooks
+  local surfaces share one transform set: CLI · Dagster asset graph (core/orchestration/dagster/)  |  Fabric tier reimplements its own (ADR-022)
 ```
 
 ---

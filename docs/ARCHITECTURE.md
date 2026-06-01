@@ -128,7 +128,7 @@ flowchart LR
 | Silver | ✅ built (local) | 10 Delta tables + `ingest_log` | CDC enabled; validated; MERGE-upsert per cohort |
 | Gold | ✅ built (local) | `encounter_summary` Delta + manifest | 1 row/encounter; CDC; as-of-date problem list; corpus contract v1.1.0 (ADR-012/014) |
 | Dagster orchestration | ✅ built (local) | `core/orchestration/dagster/` package | medallion as asset graph; cohort partitions; `validate_table` as asset checks (ADR-015/016) |
-| Fabric execution | ✅ green end-to-end (F4, SAMPLE_SIZE=100) | OneLake | independent Spark-native impl (ADR-022); notebooks 00–10; anonymous S3 ingest in 01; full 1,278-bundle re-run pending |
+| Fabric execution | ✅ green end-to-end (F4, SAMPLE_SIZE=100) | OneLake | independent Spark-native impl (ADR-022); notebooks 00–10; anonymous S3 ingest in 01; full 1,280-bundle re-run pending |
 
 ## Module map
 
@@ -190,7 +190,7 @@ docs/demo/
 
 ## Current scale (full local run)
 
-1,280 bundles (1,278 patients) → 10 Silver Delta tables in **~2m30s**, then →
+1,280 bundles (1,278 patients) → 10 Silver Delta tables in **2m19s**, then →
 **143,946** `gold.encounter_summary` rows in **~6.5s** on a single laptop, all validations passing.
 Per-table counts, corpus coverage, and methodology: [BENCHMARKS.md](BENCHMARKS.md). Operational
 procedures: [RUNBOOK.md](RUNBOOK.md). The Gold corpus contract is documented in
