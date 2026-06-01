@@ -1,17 +1,19 @@
 # scribe-iq-lakehouse
 
 Production-pattern healthcare data lakehouse on [Synthea Coherent](https://registry.opendata.aws/synthea-coherent-data/)
-(1,278 synthetic patients, FHIR R4). Fabric-first **medallion** architecture — Bronze → Silver
-→ Gold — that runs identically on a laptop (Polars + delta-rs) or Microsoft Fabric via a
-single platform-abstraction layer. The Gold corpus (`gold.encounter_summary`) feeds
-[`scribe-iq`](docs/roadmap/scribe-iq-lakehouse-spec.md) (clinical RAG),
+(1,278 synthetic patients, FHIR R4). **Medallion** architecture — Bronze → Silver → Gold —
+implemented as **two independent, engine-native tiers** that emit the same Gold contract: a
+LocalLite tier (`core/` — Polars + delta-rs, runs on a laptop) and a Fabric tier (`fabric/` —
+Spark + OneLake). The Gold corpus (`gold.encounter_summary`) feeds
+[`scribe-iq`](https://sandeep-jay.github.io/scribe-iq/) (clinical RAG),
 `clinical-bert-pipeline` (NLP), and an Ollama dialogue-generation pipeline.
 
 **Status:** Bronze → Silver → **Gold** fully built and run end-to-end on the complete
-1,278-patient dataset locally (143,946 encounter summaries). DICOM imaging headers ingested.
-**Dagster** local orchestration tier renders the medallion as a software-defined asset graph
-(third execution surface alongside the CLI and the upcoming Fabric notebooks). Fabric
-execution (notebooks 00–10) is the next milestone. Synthetic data only — **no PHI**.
+1,278-patient dataset on the LocalLite tier (143,946 encounter summaries). DICOM imaging
+headers ingested. **Dagster** local orchestration renders the medallion as a software-defined
+asset graph (a third local execution surface alongside the CLI). The **Fabric tier** ran green
+end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,278-bundle
+re-run is pending. Synthetic data only — **no PHI**.
 
 ```
  AWS Open Data S3            Bronze (raw)              Silver (10 Delta tables)        Gold
@@ -33,7 +35,7 @@ Requires Python 3.11+ and (for ingest only) the AWS CLI.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[local,dev]"     # core + local-lite (polars/delta-rs/duckdb) + dev tooling
 # Optional: add ",orchestration" for the Dagster asset-graph UI (dagster + dagster-webserver)
-pytest                            # 122 tests, no cloud / Fabric / network needed
+pytest                            # 129 tests (124 core + 5 fabric contract), fixture-only — no cloud / network
 ```
 
 Parse a single FHIR bundle (pure, no I/O):
@@ -60,8 +62,8 @@ the **[Runbook](docs/RUNBOOK.md)**.
 ### See one patient flow through the medallion
 
 ```bash
-python -m scripts.demo_walkthrough           # auto-picks a good demo patient
-python -m scripts.demo_walkthrough --patient-id <uuid>
+python -m core.scripts.demo_walkthrough           # auto-picks a good demo patient
+python -m core.scripts.demo_walkthrough --patient-id <uuid>
 ```
 
 Renders one synthetic patient's journey Bronze → Parse → Silver → Gold in the terminal:
@@ -98,9 +100,9 @@ guide; recording guide is in [**docs/demo/PLAYBOOK.md**](docs/demo/PLAYBOOK.md).
 | Process a single cohort | `python -m core.surfaces.cli.pipeline --cohort A` |
 | **Full clean rebuild** | `rm -rf data/silver data/gold && python -m core.surfaces.cli.pipeline --with-gold` |
 | Launch Dagster UI (asset graph) | `DAGSTER_HOME="$PWD/dagster_home" dagster dev` |
-| One-patient demo walkthrough | `python -m scripts.demo_walkthrough` |
+| One-patient demo walkthrough | `python -m core.scripts.demo_walkthrough` |
 | Interactive SQL notebook (DuckDB) | `duckdb docs/demo/notebooks/demo.duckdb -ui` |
-| Run tests / lint / format | `pytest` · `ruff check local tests scripts` · `black local tests scripts` |
+| Run tests / lint / format | `pytest` · `ruff check core fabric` · `black core fabric` |
 | Regenerate generated docs | `python core/scripts/gen_data_dictionary.py` · `python core/scripts/gen_corpus_schema.py` |
 
 > **Gotcha — full re-runs need a clean slate.** delta-rs MERGE upsert is for *incremental*
@@ -119,18 +121,21 @@ the local storage root is `data/` (override with `LAKEHOUSE_LOCAL_ROOT`). Nothin
 See **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the as-built diagram and module map, and the
 [ADRs](docs/adr/README.md) for *why*.
 
-- **Platform abstraction** ([ADR-002](docs/adr/002-platform-abstraction.md)) — all cloud/engine
-  I/O goes through `core/platform/`. One env var selects Fabric, local-lite, Databricks, AWS,
-  or GCP; transform code never changes.
-- **Pure transforms + Arrow interchange** ([ADR-004](docs/adr/004-arrow-interchange.md)) —
-  `core/transforms/` and `core/gold/` are engine-agnostic Python that return explicitly-typed
-  `pyarrow.Table`s. No Spark/Delta/platform imports, no file paths. Polars is used only as an
-  in-process join engine.
-- **Three execution surfaces, one transform tier** — the same pure transforms run under the
-  `core.surfaces.cli.pipeline` CLI (default, dependency-light), a **Dagster** asset graph
+- **Independent per-platform implementations** ([ADR-022](docs/adr/022-platform-independent-implementations.md)) —
+  each tier owns its complete Silver + Gold + validation stack written engine-native: `core/`
+  (LocalLite) transforms return `pyarrow.Table` (Polars + delta-rs); `fabric/` transforms return
+  Spark DataFrames (Spark + OneLake Delta). Cross-tier compatibility is by **schema parity +
+  lockstep `CONTRACT_VERSION`**, not code sharing — `core/` never imports a platform tier
+  ([ADR-017](docs/adr/017-multi-platform-repo-layout.md)).
+- **Pure transforms, no I/O** — transforms under `core/transforms/` and `core/gold/` (and their
+  `fabric/` counterparts) take data and return data: no file paths, no `spark.read`, no platform
+  imports. The platform layer owns all Delta I/O.
+- **Execution surfaces** — the LocalLite tier runs under the dependency-light
+  `core.surfaces.cli.pipeline` CLI and a **Dagster** asset graph
   ([ADR-015](docs/adr/015-dagster-local-orchestration.md),
   [ADR-016](docs/adr/016-dagster-asset-graph.md)) with cohort-partitioned backfill and
-  `validate_table` surfaced as asset checks, and the Fabric notebooks (next).
+  `validate_table` surfaced as asset checks; the Fabric tier runs under its own notebooks 00–10
+  ([ADR-021](docs/adr/021-fabric-notebook-source-of-truth.md)).
 - **CDC everywhere** — Change Data Feed is enabled on every Silver/Gold Delta table on creation
   ([ADR-009](docs/adr/009-local-silver-materialization.md)).
 - **Honest data modeling** — genomic `data_limitation` is a first-class column
@@ -206,7 +211,7 @@ never imports from any platform tier. Enforced by a CI grep check.
 - **[CORPUS_CONTRACT.md](docs/CORPUS_CONTRACT.md)** — the Gold handoff contract (v1.1.0)
 - **[BENCHMARKS.md](docs/BENCHMARKS.md)** — real run metrics + engine matrix
 - **[demo/PLAYBOOK.md](docs/demo/PLAYBOOK.md)** — recording guide for the demo video
-- **[docs/adr/](docs/adr/README.md)** — 18 Architecture Decision Records
+- **[docs/adr/](docs/adr/README.md)** — 22 Architecture Decision Records (19 active + 3 superseded)
 - **[docs/roadmap/](docs/roadmap/scribe-iq-lakehouse-spec.md)** — full spec + cross-repo plan + multi-platform reorg
 
 ## See also
@@ -219,7 +224,7 @@ never imports from any platform tier. Enforced by a CI grep check.
 ## Testing & quality
 
 ```bash
-pytest                                            # 126 tests (122 core + 4 fabric contract); fixture-only, no cloud/network
+pytest                                            # 129 tests (124 core + 5 fabric contract); fixture-only, no cloud/network
 ruff check core fabric                            # lint
 black --check core fabric                         # format check
 python core/scripts/gen_data_dictionary.py --check   # docs-as-test (CI gate)

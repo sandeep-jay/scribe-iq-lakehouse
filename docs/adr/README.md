@@ -1,5 +1,11 @@
 # ADR Index — scribe-iq-lakehouse
 
+!!! note "Path note"
+    ADRs are immutable, dated records. Those written before **2026-05-28** cite the original
+    `local/` package; the multi-platform reorg ([ADR-017](017-multi-platform-repo-layout.md))
+    renamed that tree to `core/` (and `local/pipeline.py` → `core/surfaces/cli/pipeline.py`).
+    Older ADRs are not retro-edited — see ADR-017 for the mapping.
+
 | # | Title | Status | Date |
 |---|-------|--------|------|
 | 001 | Fabric-first development approach | Accepted | 2026-05-27 |

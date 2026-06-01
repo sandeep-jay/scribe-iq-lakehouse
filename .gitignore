@@ -32,6 +32,9 @@ data/
 *.delta
 *.avro
 
+# MkDocs site build output
+/site/
+
 # Delta Lake local
 _delta_log/
 _checkpoints/

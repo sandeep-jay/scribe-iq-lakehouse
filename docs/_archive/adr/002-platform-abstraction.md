@@ -1,7 +1,7 @@
 # ADR-002: Platform abstraction layer design
 
 **Date:** 2026-05-27
-**Status:** Superseded by [ADR-022](../adr/022-platform-independent-implementations.md) (2026-05-29)
+**Status:** Superseded by [ADR-022](../../adr/022-platform-independent-implementations.md) (2026-05-29)
 **Deciders:** Sandeep Jayaprakash
 
 > **Superseded.** The `LakehousePlatform` ABC no longer serves as the universal

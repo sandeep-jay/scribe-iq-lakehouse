@@ -1,9 +1,9 @@
 # Data Dictionary — Silver layer
 
 > **Generated file — do not edit by hand.** Regenerate with
-> `python scripts/gen_data_dictionary.py` whenever a Silver schema or validation rule
-> changes. Source of truth: `local/transforms/registry.py` (schemas) and
-> `local/validation/schema_registry.py` (rules). See ADR-009 / ADR-011.
+> `python core/scripts/gen_data_dictionary.py` whenever a Silver schema or validation rule
+> changes. Source of truth: `core/transforms/registry.py` (schemas) and
+> `core/validation/schema_registry.py` (rules). See ADR-009 / ADR-011.
 
 All Silver tables are Delta tables with Change Data Feed enabled
 (`delta.enableChangeDataFeed = true`). `source_file` and `ingest_timestamp` are

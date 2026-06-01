@@ -44,6 +44,12 @@ fabric = [
     "msal>=1.28",
     "requests>=2.31",
 ]
+# Documentation site (MkDocs Material) — build/serve the docs site locally or in the docs
+# CI job. Not imported by any runtime code. Mirror these pins in requirements-docs.txt.
+docs = [
+    "mkdocs-material>=9.5,<10",
+    "pymdown-extensions>=10.7,<11",
+]
 
 [tool.setuptools.packages.find]
 # `core/` is the platform-agnostic kernel (shared by every platform tier).

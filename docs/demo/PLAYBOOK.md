@@ -7,8 +7,8 @@ Three artifacts compose the story; the playbook below sequences them.
 artifacts                                       beat in the video
 ─────────────────────────────────────────       ─────────────────
 docs/demo/notebooks/demo.duckdb (DuckDB UI) →   "look at the data shape, in SQL"
-orchestration/  (Dagster UI)                →   "look at the asset graph + sensor"
-core/scripts/demo_walkthrough.py                 →   "look at one patient end-to-end"
+core/orchestration/dagster/ (Dagster UI)    →   "look at the asset graph + sensor"
+core/scripts/demo_walkthrough.py            →   "look at one patient end-to-end"
 ```
 
 Target length: **90-second short cut** and **3-minute long-form cut**.
@@ -18,7 +18,7 @@ Target length: **90-second short cut** and **3-minute long-form cut**.
 ## 1. Pre-flight (do once, day-of)
 
 ```bash
-.venv/bin/python -m pytest -q                        # 122 tests pass — confirm clean state
+.venv/bin/python -m pytest -q                        # 129 tests pass — confirm clean state
 brew install duckdb                                  # if not already installed (needs ≥1.2)
 mkdir -p dagster_home && export DAGSTER_HOME="$PWD/dagster_home"
 ```
@@ -72,7 +72,7 @@ duckdb docs/demo/notebooks/demo.duckdb -ui
 | **1. Hook** | 0:00–0:15 | Single rendered SOAP note from the DuckDB UI (Cell 14) | "1,278 synthetic patients, FHIR R4, into a clinical-RAG corpus. Production patterns, runs locally." |
 | **2. The raw mess** | 0:15–0:45 | VSCode scrolling through a FHIR bundle JSON | "FHIR is verbose, nested, optional fields everywhere. Not queryable. Step one: turn it into typed tables." |
 | **3. The medallion** | 0:45–1:30 | Dagster asset graph → click bronze/silver/gold assets → click an asset check | "Bronze raw, Silver typed/CDC, Gold denormalized. Dagster orchestrates locally — drop a cohort and the asset graph materializes, with validation as first-class asset checks." |
-| **4. The transformation** | 1:30–2:30 | Terminal running `python -m scripts.demo_walkthrough --pause 2.5` | "Same patient, three layers — Bronze JSON, parsed records, typed Silver, denormalized Gold with the SOAP note rendered." |
+| **4. The transformation** | 1:30–2:30 | Terminal running `python -m core.scripts.demo_walkthrough --pause 2.5` | "Same patient, three layers — Bronze JSON, parsed records, typed Silver, denormalized Gold with the SOAP note rendered." |
 | **5. The payoff** | 2:30–3:00 | DuckDB UI walking through Cells 1 → 5 → 13 → 15 | "Versioned corpus contract — 143,946 encounters, queryable SQL, real clinical signal: anemia, hypertension, diabetes. Feeds scribe-iq, BERT, and Ollama." |
 
 ---
@@ -101,7 +101,7 @@ Each take is a separate clip — splice in post.
 ### Take 1 — The hook (~10 sec)
 ```bash
 clear
-.venv/bin/python -m scripts.demo_walkthrough --pause 0 | grep -A 60 "SOAP note"
+.venv/bin/python -m core.scripts.demo_walkthrough --pause 0 | grep -A 60 "SOAP note"
 ```
 Capture **only** the SOAP note rendering. Reuse a screen-grab as the video thumbnail.
 
@@ -133,7 +133,7 @@ The graph cascades: `bronze_fhir[DEMO_*]` → all 10 Silver assets fill green fo
 ### Take 5 — Walkthrough script (~90 sec)
 ```bash
 clear
-.venv/bin/python -m scripts.demo_walkthrough --pause 2.5
+.venv/bin/python -m core.scripts.demo_walkthrough --pause 2.5
 ```
 Let it run end-to-end without touching the keyboard. 2.5-second pauses give
 time to narrate each section: "Bronze JSON" → "parsed records" → "typed Silver" → "Gold with SOAP".
@@ -176,7 +176,7 @@ Sequence: **Take 1 (hook) → Take 2 (raw) → architecture diagram still (5s) �
 |---------|----------|
 | Dagster sensor isn't firing | Skip Take 4; Take 3 (clicking assets) carries it |
 | `demo.duckdb` paths broken after a `cd` change | Re-run Cell 0 from `docs/demo/notebooks/demo_notebook.sql` — recreates views |
-| SOAP note content looks bland for the anchor patient | Re-pick: `.venv/bin/python -m scripts.demo_walkthrough --patient-id <other-uuid>` (try ones from Cell 11) |
+| SOAP note content looks bland for the anchor patient | Re-pick: `.venv/bin/python -m core.scripts.demo_walkthrough --patient-id <other-uuid>` (try ones from Cell 11) |
 | Out of recording time | Single-take Take 5 (walkthrough) alone — self-contained 90-sec demo |
 | Asset checks all show "Never run" | Materialize one Silver asset once; that triggers all 10 checks |
 
@@ -190,7 +190,7 @@ Sequence: **Take 1 (hook) → Take 2 (raw) → architecture diagram still (5s) �
 | `docs/demo/notebooks/demo.duckdb` | Pre-loaded DuckDB UI notebook (local convenience) |
 | `docs/demo/notebooks/README.md` | How to open / regenerate |
 | `core/scripts/demo_walkthrough.py` | One-patient CLI walkthrough (rich-formatted) |
-| `local/preview.py` | Shared preview helpers (same renderings as Dagster UI) |
+| `core/preview.py` | Shared preview helpers (same renderings as Dagster UI) |
 | `core/orchestration/dagster/` | Dagster asset graph + checks (ADR-015, ADR-016) |
 | `docs/RUNBOOK.md` | Ops procedures (build, verify, troubleshoot) |
 | `docs/CORPUS_CONTRACT.md` | The data contract this demo proves |

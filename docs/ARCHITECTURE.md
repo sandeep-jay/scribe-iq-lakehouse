@@ -54,8 +54,8 @@ tiers import the per-tier transforms and platform — neither tier imports the o
 For **read-only exploration** the same Delta tables are queryable from a
 **DuckDB UI notebook** ([`docs/demo/notebooks/demo_notebook.sql`](demo/notebooks/demo_notebook.sql))
 — 20 cells over Silver/Gold via `delta_scan(...)`, no Spark. The Dagster asset
-metadata and the CLI walkthrough ([`core/scripts/demo_walkthrough.py`](../core/scripts/demo_walkthrough.py))
-both render via [`local/preview.py`](../local/preview.py), so the same data
+metadata and the CLI walkthrough ([`core/scripts/demo_walkthrough.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/scripts/demo_walkthrough.py))
+both render via [`core/preview.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/preview.py), so the same data
 shape appears in the UI, the terminal, and the SQL notebook — one set of
 renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
 
@@ -72,40 +72,40 @@ renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAY
 ## Module map
 
 ```
-local/
-  platform/        I/O abstraction — the ONLY place engine-specific code lives (ADR-002)
-    base.py          LakehousePlatform ABC; Arrow is the interchange type (ADR-004)
-    factory.py       LAKEHOUSE_PLATFORM env var → implementation (default local_lite)
+core/                              ← LocalLite tier + shared kernel (built as a wheel, ADR-017/018)
+  platform/        LocalLite I/O — Delta read/write, CDC, MERGE (LocalLite only post-ADR-022)
+    base.py          LakehousePlatform ABC; pa.Table is the LocalLite interchange type
+    factory.py       LAKEHOUSE_PLATFORM env var → local surface (default local_lite)
     local_lite.py    Polars + delta-rs: Delta write/read, CDC, MERGE upsert (ADR-003/009)
   transforms/      Pure, platform-free record extraction → Arrow (returns pa.Table)
     fhir_parser.py   FHIRBundleParser — dict-based, all extract_* methods (ADR-008)
     schema_utils.py  Field-type-driven Arrow coercion (UTC ts, date32, string codes)
-    silver_*.py      One module per Silver table; explicit schemas
+    silver_*.py      One module per Silver table group; explicit schemas
     registry.py      table → (schema, primary_key, build_fn) — single source of truth
   gold/            Pure Gold denormalization → Arrow (Polars join engine, ADR-012)
-    encounter_summary.py  Silver → gold.encounter_summary; GOLD_SCHEMA + corpus contract
+    encounter_summary.py  Silver → gold.encounter_summary; GOLD_SCHEMA + CONTRACT_VERSION
     corpus_manifest.py    Lineage + coverage stats → gold/_metadata/corpus_manifest.json
   validation/      schema_registry.py (rules) + validate.py → silver.ingest_log
-  ingest/          download.py (S3 sync: FHIR cohorts + DICOM/CSV assets) · bronze_landing
+  ingest/          download.py (S3 sync: FHIR cohorts + DICOM/CSV assets) · bronze_landing.py
     dicom_index.py   StudyInstanceUID → .dcm path; resolver feeding DICOM headers (ADR-013)
     streaming_sim.py cohort replay + watchdog (Auto Loader analogue)
-  pipeline.py      Bronze → Silver → Gold orchestration (run_pipeline · build_gold)
-  redaction.py     PHI-safe log references (ADR-010)
+  surfaces/cli/pipeline.py   Bronze → Silver → Gold CLI orchestration (run_pipeline · build_gold)
+  orchestration/dagster/     Dagster asset graph — local surface; imports core/, never reverse (ADR-015/016)
+    assets.py        bronze_fhir → silver_tables (@multi_asset, parse-once → 10 nodes) → gold_encounter_summary;
+                     each MaterializeResult carries rendered metadata (schema + sample rows + sample bundle / SOAP card)
+    checks.py        @asset_check per Silver table wrapping validate_table() — UI shows rule-by-rule pass/fail table
+    partitions.py    DynamicPartitionsDefinition — cohorts = partitions (per-cohort backfill)
+    resources.py     PlatformResource → get_platform(LAKEHOUSE_PLATFORM); platform persists, not IOManager
+    sensors.py       bronze_cohort_sensor — watches data/bronze/fhir/cohort=* (Auto Loader analogue);
+                     target = bronze_fhir + 10 Silver assets (full chain per cohort, Gold stays manual)
+    definitions.py   Definitions(assets, asset_checks, sensors, resources)
+  scripts/
+    gen_data_dictionary.py   Generates docs/DATA_DICTIONARY.md from the registry (ADR-011)
+    gen_corpus_schema.py     Generates schemas/gold_encounter_summary.json from GOLD_SCHEMA (ADR-012)
+    demo_walkthrough.py      One-patient Bronze → Parse → Silver → Gold tour (rich CLI; same renderers as Dagster UI)
   preview.py       Markdown renderers for data shape (schema/sample/bundle/encounter card) —
                    shared by Dagster asset metadata and core/scripts/demo_walkthrough.py
-orchestration/   Dagster asset graph — third execution surface; imports local/, never reverse (ADR-015/016)
-  assets.py        bronze_fhir → silver_tables (@multi_asset, parse-once → 10 nodes) → gold_encounter_summary;
-                   each MaterializeResult carries rendered metadata (schema + sample rows + sample bundle / SOAP card)
-  checks.py        @asset_check per Silver table wrapping validate_table() — UI shows rule-by-rule pass/fail table
-  partitions.py    DynamicPartitionsDefinition — cohorts = partitions (per-cohort backfill)
-  resources.py     PlatformResource → get_platform(LAKEHOUSE_PLATFORM); platform persists, not IOManager
-  sensors.py       bronze_cohort_sensor — watches data/bronze/fhir/cohort=* (Auto Loader analogue);
-                   target = bronze_fhir + 10 Silver assets (full chain per cohort, Gold stays manual)
-  definitions.py   Definitions(assets, asset_checks, sensors, resources)
-scripts/
-  gen_data_dictionary.py   Generates docs/DATA_DICTIONARY.md from the registry (ADR-011)
-  gen_corpus_schema.py     Generates schemas/gold_encounter_summary.json from GOLD_SCHEMA (ADR-012)
-  demo_walkthrough.py      One-patient Bronze → Parse → Silver → Gold tour (rich CLI; same renderers as Dagster UI)
+  redaction.py     PHI-safe log references (ADR-010)
 docs/demo/
   PLAYBOOK.md               Demo video recording guide (5-beat structure, takes, edit, publish)
   notebooks/
@@ -115,9 +115,12 @@ docs/demo/
 
 ## Key properties (and where enforced)
 
-- **Platform portability** — transforms never import platform/Spark/Delta/`dagster`; one env
-  var switches engines. Enforced by `.claude/rules/transforms.md` + tests (ADR-002, ADR-015).
-- **Arrow interchange** — every transform returns an explicitly-typed `pa.Table` (ADR-004).
+- **Independent per-platform impls** — each tier owns its Silver + Gold + validation, written
+  engine-native; LocalLite transforms never import platform/Spark/Delta/`dagster` (pure
+  `pa.Table`), and the factory dispatches local surfaces only. Enforced by
+  `.claude/rules/transforms.md` + tests (ADR-022, ADR-015).
+- **Tier interchange types** — every LocalLite transform returns an explicitly-typed `pa.Table`
+  (the LocalLite tier's interchange); Fabric transforms return Spark DataFrames (ADR-022).
 - **CDC everywhere** — `delta.enableChangeDataFeed=true` on table creation (ADR-009).
 - **Honest data modeling** — genomic `data_limitation` is a first-class column (ADR-007);
   DICOM headers without pixels (ADR-006); validation rules match Coherent reality, e.g.

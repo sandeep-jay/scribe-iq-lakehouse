@@ -5,8 +5,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+### Documentation site (2026-05-31) — MkDocs Material + portfolio docs + consistency fixes
+
+#### Added
+- **MkDocs Material documentation site** (`mkdocs.yml`) for GitHub Pages — Material theme
+  (indigo, light/dark toggle), mermaid via `pymdownx.superfences`, `pymdownx.snippets`,
+  curated nav. **8 new hand-authored pages**: Home (`docs/index.md`), Reviewer Guide,
+  Engineering Case Study, Design Notes, Healthcare & Responsible Data, Multi-Platform Engine
+  Parity, Downstream & Portfolio, About. **Six mermaid diagrams** including both engine-native
+  tiers (LocalLite D2, Fabric D3) and the ADR-022 parity/convergence (D4).
+- `.github/workflows/docs.yml` — GitHub Pages deploy via the Pages-artifact mechanism
+  (`upload-pages-artifact` → `deploy-pages`), gated on `gen_data_dictionary.py --check` +
+  `gen_corpus_schema.py --check` and `mkdocs build --strict`. One-time maintainer step:
+  Settings → Pages → Source = GitHub Actions.
+- `[project.optional-dependencies] docs` (mkdocs-material, pymdown-extensions) +
+  `requirements-docs.txt` (CI-cache mirror); `/site/` gitignored.
+
+#### Changed (doc-consistency pass — reviewer docs had drifted behind ADR-017/022)
+- **README** "Architecture at a glance" rewritten to the ADR-022 reality (two independent
+  engine-native tiers — LocalLite→`pa.Table`, Fabric→Spark DataFrame — compatible by schema
+  parity + lockstep `CONTRACT_VERSION`). Fixed broken ADR-002/004 links (→ 022/017/021),
+  unified Fabric status (green on F4, 100-sample), and corrected counts (129 tests; 22 ADRs).
+- **ARCHITECTURE.md** module map corrected to the real `core/` tree (orchestration + scripts
+  under `core/`, pipeline under `surfaces/cli/`); ADR-002/004 → ADR-022 framing.
+- **CORPUS_CONTRACT / BENCHMARKS / PLAYBOOK**: `local/`→`core/` paths,
+  `scripts.demo_walkthrough`→`core.scripts.demo_walkthrough`, Fabric engine-matrix status;
+  source-file links repointed to GitHub blob URLs (resolve in both the repo and the site).
+- **`core/scripts/gen_data_dictionary.py`** header template `local/`→`core/` (regenerated
+  `DATA_DICTIONARY.md`). ADR index gains a `local/`→`core/` rename banner; roadmap spec gains
+  an "intended end-state, not as-built" banner.
+
+#### Tests / quality
+- Full suite green (**128 passed, 1 skipped** — the Fabric-workspace test); generated-doc
+  gates pass; **`mkdocs build --strict` clean** (zero warnings); all six diagrams render.
+- Note: 20 pre-existing ruff findings remain in the Fabric tier (`fabric/*`,
+  `core/orchestration/*`) from the in-progress Session 5 branch — untouched by this work.
+
 ### Session 5 (in progress) — Fabric Spark-native rewrite (ADR-022) + dedup fix + Power BI
-Plan: [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md).
+Plan: [docs/roadmap/fabric-execution-plan.md](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/docs/roadmap/fabric-execution-plan.md).
 
 #### Milestone (2026-05-29 — first green cloud run)
 - **Notebooks 00–10 ran successfully end-to-end on Fabric F4 capacity**
@@ -117,7 +153,7 @@ Plan: [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan
 - Full suite: 128 passed + 1 skipped (workspace-only).
 
 ### Session 5 — earlier phases (Fabric end-to-end + dedup fix + Power BI)
-Plan: [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md). Phases 1–3 complete (pre-pivot).
+Plan: [docs/roadmap/fabric-execution-plan.md](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/docs/roadmap/fabric-execution-plan.md). Phases 1–3 complete (pre-pivot).
 
 #### Added
 - **ADR-019** (Silver MERGE idempotency) — pre-merge target-side dedup guard

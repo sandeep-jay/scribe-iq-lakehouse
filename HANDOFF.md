@@ -1,55 +1,51 @@
-# HANDOFF — Session 5 · Medallion green end-to-end in Fabric
-**Date:** 2026-05-31 · **Branch:** `feat/fabric-spark-native` · **Plan:** [docs/roadmap/fabric-execution-plan.md](docs/roadmap/fabric-execution-plan.md)
+# HANDOFF — Documentation site built; Fabric Session 5 awaiting review
+**Date:** 2026-05-31 · **Branch:** `feat/docs-site` (off `feat/fabric-spark-native`)
 
 > State only. For what happened in this (or any prior) session see [CHANGELOG.md](CHANGELOG.md).
 > Narrative belongs there, not here.
 
 ## Current state
 
-Pure-Spark fabric/ rewrite is **fully running in the cloud**: notebooks
-00–10 are green end-to-end on Fabric F4 capacity against `SAMPLE_SIZE=100`
-Coherent bundles. All 10 Silver tables + `gold.encounter_summary` + both
-manifests (Bronze + Gold) materialized in the `scribe_iq_synthea_coherent`
-lakehouse. Branch is **12 commits ahead of main**, pushed to both
-`origin` (GitHub mirror, canonical) and Azure DevOps (Fabric Git
-Integration source). Capacity is paused; resume picks up cleanly because
-all storage persists.
+The **MkDocs Material documentation site is built and `mkdocs build --strict` is green**
+(zero warnings) on `feat/docs-site`. 8 new narrative pages (Home, Reviewer Guide, Case
+Study, Design Notes, Responsible Data, Engine Parity, Portfolio, About) + 6 mermaid
+diagrams (both engine-native tiers D2/D3 + the ADR-022 parity D4); all existing docs
+(ARCHITECTURE, 19 ADRs, CORPUS_CONTRACT, BENCHMARKS, RUNBOOK, DATA_DICTIONARY, PLAYBOOK)
+wired into nav after a **doc-consistency pass** that reconciled the reviewer-facing docs
+to ADR-017/022 (architecture story, `local/`→`core/` paths, broken ADR links, Fabric
+status, counts). `.github/workflows/docs.yml` deploys to GitHub Pages (Pages-artifact,
+gated on the generated-doc `--check`s + strict build). Tests green (128 passed, 1 skipped);
+generated-doc gates pass.
+
+`feat/docs-site` is **based on `feat/fabric-spark-native`** (12 Fabric commits, still
+**awaiting user review before any PR** — standing instruction), so the docs branch
+currently also carries the Fabric Session 5 work.
 
 ## Next task
 
-**Resume the demo deliverables stack.** In this order:
-
-1. **Confirm screenshots** in `fabric/docs/screenshots/` — especially
-   `05_silver_soap_notes.png` (decoded SOAP note) and
-   `10b_encounter_card.png` (rendered displayHTML card). If missing,
-   re-run those two notebooks for the screenshot only — data is intact.
-2. **OneLake explorer screenshot** of the lakehouse tree showing
-   `Tables/silver/* (10) + Tables/gold/encounter_summary +
-   Files/bronze/fhir/cohort={A,B,C} + Files/gold/_metadata/`.
-3. **Build the Fabric Data Pipeline** —
-   `fabric/data_factory/medallion_pipeline.DataPipeline/` with 10 Notebook
-   activities chained on-success. Replaces 10 manual notebook runs with
-   one Run click. Headline demo artifact.
-4. **Power BI Direct Lake report** on `gold.encounter_summary` — patient
-   count card, encounter count card, avg active conditions per encounter,
-   top-conditions bar chart, SOAP-note length distribution.
-5. **Open PR `feat/fabric-spark-native → main`** with screenshots
-   embedded in the body.
+1. **Maintainer one-time:** GitHub → Settings → Pages → Source = **GitHub Actions**
+   (required before the first deploy; the workflow is push-to-`main` + `workflow_dispatch`).
+2. Choose the docs-site merge path (see open decisions).
+3. Resume Fabric demo deliverables (Data Factory pipeline, Power BI Direct Lake) — carried
+   over from Session 5.
 
 ## Open decisions
 
-| Decision | Options | Owner | Due |
-|---|---|---|---|
-| Full-corpus re-run before PR | Yes (~1,278 bundles, 15 min, more impressive numbers) / No (stay on 100-sample) | User | Before PR open |
-| Power BI report scope | Minimal (3 cards + top-conditions chart) / Richer (drillthrough patient page with encounter card) | User | Before report build |
+| Decision | Options | Owner |
+|---|---|---|
+| Docs-site merge path | (a) fold into the Fabric PR → `main` · (b) rebase docs-only onto `main` as a standalone PR | User |
+| Pre-existing ruff debt (20 findings: `fabric/*`, `core/orchestration/*`) | fix as part of the Fabric PR — out of scope for docs | User |
+| Full-corpus Fabric re-run before PR | Yes (~1,278 bundles, more impressive numbers) / No (stay on 100-sample) | User |
+| Power BI report scope | Minimal (3 cards + chart) / Richer (drillthrough) | User |
 
 ## Blockers / waiting-on
 
-- **User review of branch** before opening PR (explicit "don't push a PR
-  without my say so" — still standing).
+- **User review of `feat/fabric-spark-native`** before opening any PR (standing "don't push
+  a PR without my say so").
+- GitHub Pages source setting (manual, one-time) before the first site deploy.
 
 ## First task for next session
 
-Resume capacity, confirm screenshots are in `fabric/docs/screenshots/`,
-then start the Data Pipeline build (`fabric/data_factory/medallion_pipeline.DataPipeline/.platform`
-+ `pipeline-content.json`).
+Set Pages source = GitHub Actions; then decide the docs-site merge path. If standalone,
+rebase the docs changes onto `main` and open `feat/docs-site → main`; otherwise fold them
+into the Fabric PR.

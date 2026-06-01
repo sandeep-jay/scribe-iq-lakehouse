@@ -1,7 +1,15 @@
 # scribe-iq-lakehouse — Project Spec
 
+!!! note "Intended end-state — not as-built"
+    This is the original design target, kept for context. The shipped system differs in places —
+    the as-built reference is [ARCHITECTURE.md](../ARCHITECTURE.md), the live data contract is
+    [CORPUS_CONTRACT.md](../CORPUS_CONTRACT.md), and the *why* is in the [ADRs](../adr/README.md).
+    Notably: notebooks are Fabric `.Notebook/` source, not `.ipynb` (ADR-021); as-built Silver is
+    10 tables (no separate `document_reference` / `diagnostic_report`); the FHIR corpus is
+    ~4.6 GiB (the ~9 GiB figure includes DICOM).
+
 **Repo:** `scribe-iq-lakehouse`
-**Status:** Implementation-ready
+**Status:** Original design spec — see banner above
 **Execution environments:** Microsoft Fabric (Bronze + Silver) + Local Python (Gold)
 
 ---

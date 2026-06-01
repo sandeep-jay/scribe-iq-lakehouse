@@ -9,9 +9,9 @@ This is the handoff interface between the lakehouse and its downstream AI consum
 - **clinical-bert-pipeline** (NLP) — consumes `soap_note_text` + structured labels.
 
 One row = one clinical encounter. The machine-readable schema is
-[`schemas/gold_encounter_summary.json`](../schemas/gold_encounter_summary.json) (JSON
+[`schemas/gold_encounter_summary.json`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/schemas/gold_encounter_summary.json) (JSON
 Schema, Draft 2020-12), **generated** from the Arrow `GOLD_SCHEMA` in
-[`local/gold/encounter_summary.py`](../local/gold/encounter_summary.py) by
+[`core/gold/encounter_summary.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/gold/encounter_summary.py) by
 `scripts/gen_corpus_schema.py` (ADR-011, ADR-012). This document is the human-readable
 companion; on any disagreement, the generated JSON Schema and the code win.
 
@@ -128,7 +128,7 @@ a breaking change cannot land silently without a version bump.
 ## Lineage
 
 Each build writes `gold/_metadata/corpus_manifest.json` (see
-[`local/gold/corpus_manifest.py`](../local/gold/corpus_manifest.py)) recording the
+[`core/gold/corpus_manifest.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/gold/corpus_manifest.py)) recording the
 contract version, row count, per-Silver-table row counts and Delta versions, the platform,
 and the coverage statistics above — the provenance record handed to consumers alongside
 this contract.
