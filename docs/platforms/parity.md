@@ -13,19 +13,25 @@ This is the senior-architect decision of the project: an earlier single-abstract
 
 ```mermaid
 flowchart TB
-    subgraph L["LocalLite · core/"]
-        L1["Polars + delta-rs<br/>transforms return pa.Table"]
+    subgraph CORE["core/ — LocalLite tier (laptop, $0)"]
+        direction TB
+        C1["Polars + delta-rs + DuckDB"]
+        C2["own transforms (core/transforms/silver_*.py)"]
+        C1 --> C2
     end
-    subgraph F["Fabric · fabric/"]
-        F1["Spark + OneLake<br/>transforms return Spark DataFrame"]
+    subgraph FAB["fabric/ — Fabric tier (Spark / OneLake)"]
+        direction TB
+        F1["Spark + Delta + OneLake"]
+        F2["own transforms (fabric/transforms/silver_*.py)"]
+        F1 --> F2
     end
-    L1 --> K{{"gold.encounter_summary — CONTRACT v1.1.0<br/>schema parity + lockstep version · test-gated"}}
-    F1 --> K
-    K --> D["scribe-iq · clinical-bert · Ollama"]
-    classDef l fill:#eef2ff,stroke:#6366f1;
-    classDef f fill:#ecfeff,stroke:#06b6d4;
-    class L,L1 l
-    class F,F1 f
+    CONTRACT{{"Gold contract<br/>schema parity + lockstep CONTRACT_VERSION<br/>(compatibility, NOT shared code)"}}
+    C2 --> CONTRACT
+    F2 --> CONTRACT
+    NOTE["Rejected: one shared transform layer.<br/>Lowest-common-denominator + applyInPandas bridge tax → ADR-022"]
+    NOTE -.-> CONTRACT
+    classDef contract fill:#eef2ff,stroke:#6366f1,font-weight:bold;
+    class CONTRACT contract
 ```
 
 ## LocalLite tier (`core/`)

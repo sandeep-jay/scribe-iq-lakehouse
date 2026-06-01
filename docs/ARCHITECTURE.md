@@ -18,29 +18,29 @@ CLI or a **Dagster** software-defined asset graph (ADR-015/016); on Fabric it ra
 green end-to-end on F4 capacity against a 100-patient demo sample via notebooks 00–10.
 
 ```mermaid
-flowchart TD
-    S3["AWS Open Data<br/>s3://synthea-open-data/coherent<br/>(1,280 FHIR bundles, 4.6 GB)"]
-
-    subgraph BRONZE["BRONZE — raw, append-only"]
-        B["data/bronze/fhir/cohort=A|B|C/*.json<br/>+ dicom/*.dcm (headers) + csv/ (reference)<br/>+ _metadata/manifest.json"]
+flowchart LR
+    SRC["AWS Open Data S3<br/>Synthea Coherent · FHIR R4<br/>1,278 patients · ~4.6 GiB"]
+    subgraph LH["scribe-iq-lakehouse — the data platform"]
+        direction TB
+        BR["Bronze<br/>raw · append-only"]
+        SV["Silver<br/>10 typed Delta tables · CDC · validated"]
+        GD["Gold<br/>gold.encounter_summary<br/>143,946 rows · 1 / encounter"]
+        BR --> SV --> GD
     end
-
-    subgraph SILVER["SILVER — Delta, CDC enabled ✅ built"]
-        ST["10 tables: patient · encounter · condition · observation<br/>medication_request · procedure · soap_note · ecg_metadata<br/>imaging_study · genomic_report  (+ ingest_log audit)"]
+    SRC --> BR
+    GD == "corpus contract v1.1.0<br/>versioned · test-gated" ==> CON
+    subgraph CON["Downstream AI consumers"]
+        direction TB
+        SIQ["scribe-iq<br/>clinical RAG / docs"]
+        BERT["clinical-bert-pipeline<br/>NLP"]
+        OLL["Ollama pipeline (roadmap)<br/>note + dialogue generation"]
     end
-
-    subgraph GOLD["GOLD — denormalized corpus ✅ built"]
-        G["gold.encounter_summary (143,946 rows, 1/encounter)<br/>+ _metadata/corpus_manifest.json"]
-    end
-
-    S3 -->|"download.py · aws s3 sync"| B
-    B -->|"pipeline.py · per-cohort micro-batch<br/>parse → build → MERGE"| ST
-    ST -->|"build_gold · Polars denormalize → overwrite"| G
-    G -.->|"corpus contract v1.1.0"| DS["scribe-iq (RAG)<br/>clinical-bert-pipeline (NLP)<br/>Ollama generation"]
-
-    classDef done fill:#d4edda,stroke:#28a745;
-    classDef planned fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4 3;
-    class B,ST,G done;
+    classDef plat fill:#eef2ff,stroke:#6366f1;
+    classDef cons fill:#f0fdf4,stroke:#22c55e;
+    classDef road fill:#fff7ed,stroke:#f59e0b,stroke-dasharray:4 3;
+    class LH plat
+    class CON cons
+    class OLL road
 ```
 
 The LocalLite tier runs under **two local execution surfaces** (ADR-015/016): the
@@ -58,6 +58,67 @@ metadata and the CLI walkthrough ([`core/scripts/demo_walkthrough.py`](https://g
 both render via [`core/preview.py`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/core/preview.py), so the same data
 shape appears in the UI, the terminal, and the SQL notebook — one set of
 renderers, three audiences. Recording guide: [`docs/demo/PLAYBOOK.md`](demo/PLAYBOOK.md).
+
+## Medallion, with the engine at every hop
+
+Bronze ingest (S3 → append-only; `streaming_sim.py` replays cohorts as an Auto Loader analogue)
+→ Silver (one pure-Python FHIR parse fans out to both tiers — Polars + delta-rs locally, Spark
+`from_json(BUNDLE_SCHEMA)` on Fabric — into 10 typed, CDC-enabled Delta tables, validated by
+`validate_table`) → Gold (Polars join/agg → one `gold.encounter_summary` under the versioned
+contract).
+
+```mermaid
+flowchart TB
+    S3["AWS Open Data S3<br/>FHIR bundles"]
+    STREAM["streaming_sim.py<br/>cohort replay · Auto Loader pattern"]
+    S3 --> STREAM --> BRONZE
+
+    subgraph BRONZE["Bronze — raw, append-only"]
+        B1["fhir/ · dicom/ · csv/ + manifests"]
+    end
+
+    subgraph SILVER["Silver — 10 typed Delta tables · CDC · validated"]
+        direction LR
+        PARSE["pure-Python FHIRBundleParser<br/>(engine-agnostic dicts)"]
+        LOCALS["LocalLite: Polars + delta-rs"]
+        FABS["Fabric: Spark from_json(BUNDLE_SCHEMA)<br/>distributed"]
+        PARSE --> LOCALS
+        PARSE --> FABS
+    end
+
+    subgraph GOLD["Gold — one governed contract"]
+        G1["gold.encounter_summary<br/>Polars join/agg · 1 row / encounter<br/>contract v1.1.0"]
+    end
+
+    BRONZE --> SILVER --> GOLD
+    VAL["validate_table → Dagster asset checks"] -.-> SILVER
+
+    classDef gold fill:#fff7ed,stroke:#f59e0b;
+    class GOLD gold
+```
+
+## Dagster asset graph (ADR-015/016)
+
+The LocalLite tier also renders the medallion as a **software-defined asset graph** — cohorts
+become partitions, one parse-once `@multi_asset` fans out to 10 Silver nodes, and `validate_table`
+is surfaced as an `@asset_check` (rule-by-rule pass/fail in the UI).
+
+```mermaid
+flowchart LR
+    subgraph BRONZE_G["bronze (cohort-partitioned)"]
+        BF["bronze_fhir<br/>inventory per cohort"]
+    end
+    subgraph SILVER_G["silver (multi-asset: parse-once → 10 nodes)"]
+        S1["patient"]; S2["encounter"]; S3["condition"]; S4["observation"]; S5["… 6 more"]
+    end
+    subgraph GOLD_G["gold"]
+        GA["gold_encounter_summary<br/>+ corpus_manifest.json"]
+    end
+    BF --> S1 & S2 & S3 & S4 & S5
+    S1 & S2 & S3 & S4 & S5 --> GA
+    AC["@asset_check: validate_table"] -.-> S1
+    AC -.-> S2
+```
 
 ## Layers (as-built)
 
