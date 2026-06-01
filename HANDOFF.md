@@ -1,51 +1,43 @@
-# HANDOFF — Documentation site built; Fabric Session 5 awaiting review
-**Date:** 2026-05-31 · **Branch:** `feat/docs-site` (off `feat/fabric-spark-native`)
+# HANDOFF — Fabric tier + docs site merged to main; site live
+**Date:** 2026-06-01 · **Branch:** `main`
 
 > State only. For what happened in this (or any prior) session see [CHANGELOG.md](CHANGELOG.md).
 > Narrative belongs there, not here.
 
 ## Current state
 
-The **MkDocs Material documentation site is built and `mkdocs build --strict` is green**
-(zero warnings) on `feat/docs-site`. 8 new narrative pages (Home, Reviewer Guide, Case
-Study, Design Notes, Responsible Data, Engine Parity, Portfolio, About) + 6 mermaid
-diagrams (both engine-native tiers D2/D3 + the ADR-022 parity D4); all existing docs
-(ARCHITECTURE, 19 ADRs, CORPUS_CONTRACT, BENCHMARKS, RUNBOOK, DATA_DICTIONARY, PLAYBOOK)
-wired into nav after a **doc-consistency pass** that reconciled the reviewer-facing docs
-to ADR-017/022 (architecture story, `local/`→`core/` paths, broken ADR links, Fabric
-status, counts). `.github/workflows/docs.yml` deploys to GitHub Pages (Pages-artifact,
-gated on the generated-doc `--check`s + strict build). Tests green (128 passed, 1 skipped);
-generated-doc gates pass.
+The **Fabric Spark-native tier (ADR-022)** and the **MkDocs documentation site** are both
+**merged to `main`** (PR #1 Fabric, PR #2 docs, + CI hotfix PR #3). The docs site is **live**
+at https://sandeep-jay.github.io/scribe-iq-lakehouse/ (Pages deploy green). CI is green —
+`core-pr-tests` (ruff + pytest **128 passed / 1 skipped**) and the docs `mkdocs build --strict`
+(zero warnings). The LocalLite tier runs the full medallion end-to-end (143,946 Gold rows); the
+Fabric tier ran green on F4 against a 100-patient sample (notebooks 00–10).
 
-`feat/docs-site` is **based on `feat/fabric-spark-native`** (12 Fabric commits, still
-**awaiting user review before any PR** — standing instruction), so the docs branch
-currently also carries the Fabric Session 5 work.
+Merged branches are deleted. Pushed to **GitHub only** — the Azure DevOps remote (Fabric Git
+Integration source) is behind `main`; `git push origin main` syncs it when desired.
 
 ## Next task
 
-1. **Maintainer one-time:** GitHub → Settings → Pages → Source = **GitHub Actions**
-   (required before the first deploy; the workflow is push-to-`main` + `workflow_dispatch`).
-2. Choose the docs-site merge path (see open decisions).
-3. Resume Fabric demo deliverables (Data Factory pipeline, Power BI Direct Lake) — carried
-   over from Session 5.
+**Resume the Fabric demo deliverables** (carried over from Session 5):
+1. Fabric **Data Pipeline** — `fabric/data_factory/medallion_pipeline.DataPipeline/` chaining
+   notebooks 00–10 on-success (one-click run; headline demo artifact).
+2. **Power BI Direct Lake** report on `gold.encounter_summary` (count cards, top-conditions
+   bar, SOAP-length distribution).
+3. Confirm screenshots in `fabric/docs/screenshots/`.
 
 ## Open decisions
 
 | Decision | Options | Owner |
 |---|---|---|
-| Docs-site merge path | (a) fold into the Fabric PR → `main` · (b) rebase docs-only onto `main` as a standalone PR | User |
-| Pre-existing ruff debt (20 findings: `fabric/*`, `core/orchestration/*`) | fix as part of the Fabric PR — out of scope for docs | User |
-| Full-corpus Fabric re-run before PR | Yes (~1,278 bundles, more impressive numbers) / No (stay on 100-sample) | User |
-| Power BI report scope | Minimal (3 cards + chart) / Richer (drillthrough) | User |
+| Full-corpus Fabric re-run | Yes (~1,278 bundles, stronger numbers) / No (stay on 100-sample) | User |
+| Sync Azure DevOps (`git push origin main`) | Now / next time touching Fabric | User |
+| Power BI report scope | Minimal (cards + chart) / Richer (drillthrough) | User |
 
 ## Blockers / waiting-on
 
-- **User review of `feat/fabric-spark-native`** before opening any PR (standing "don't push
-  a PR without my say so").
-- GitHub Pages source setting (manual, one-time) before the first site deploy.
+- None blocking. Pages live; CI green; branches merged and pruned.
 
 ## First task for next session
 
-Set Pages source = GitHub Actions; then decide the docs-site merge path. If standalone,
-rebase the docs changes onto `main` and open `feat/docs-site → main`; otherwise fold them
-into the Fabric PR.
+Build the Fabric Data Pipeline (`medallion_pipeline.DataPipeline/.platform` +
+`pipeline-content.json`), then the Power BI Direct Lake report on `gold.encounter_summary`.
