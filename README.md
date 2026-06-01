@@ -26,7 +26,7 @@ industrializes that foundation the rigorous way; next, a **roadmap** Ollama loop
 **Status:** Bronze → Silver → **Gold** fully built and run end-to-end on the complete
 1,278-patient dataset on the LocalLite tier (143,946 encounter summaries). DICOM imaging
 headers ingested. **Dagster** local orchestration renders the medallion as a software-defined
-asset graph (a third local execution surface alongside the CLI). The **Fabric tier** ran green
+asset graph (a second local execution surface alongside the CLI). The **Fabric tier** ran green
 end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,280-bundle
 re-run is pending. Synthetic data only — **no PHI**.
 
@@ -63,7 +63,7 @@ records = FHIRBundleParser().parse_bundle(bundle)
 #  -> {"patient": [...], "encounter": [...], "soap_note": [...], "condition": [...], ...}
 ```
 
-Run the whole lakehouse locally (downloads ~4.6 GB FHIR, then builds Silver + Gold):
+Run the whole lakehouse locally (downloads ~4.6 GiB FHIR, then builds Silver + Gold):
 
 ```bash
 python -m core.ingest.download --bronze-root data/bronze   # FHIR → Bronze (~18 min, network-bound)
@@ -198,7 +198,7 @@ core/                               ← platform-agnostic kernel; built as a whe
   tests/  scripts/  docs/
 
 fabric/                             ← Fabric tier; consumes `core` wheel via Environment
-  platform.py                       ← FabricPlatform(LakehousePlatform) — Session 5
+  platform.py                       ← FabricPlatform — Spark-native, independent (ADR-022)
   notebooks/                        ← Git-Integration-synced to the workspace
   environments/                     ← Fabric Environment spec (wheel + Spark config)
   deploy/                           ← fabric-cicd config + REST upload helper
@@ -207,7 +207,7 @@ fabric/                             ← Fabric tier; consumes `core` wheel via E
 
 databricks/  aws/                   ← future siblings (same shape as fabric/)
 
-.github/workflows/                  ← core-build · core-pr-tests · fabric-deploy
+.github/workflows/                  ← core-build · core-pr-tests · docs (fabric/databricks/aws-deploy disabled)
 docs/adr/  docs/roadmap/            ← ADRs + planning docs
 schemas/                            ← machine-readable corpus JSON Schema
 ```
