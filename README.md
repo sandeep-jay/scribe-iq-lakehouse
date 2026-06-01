@@ -1,28 +1,42 @@
 # scribe-iq-lakehouse
 
+This project takes raw, messy, hospital-style patient data and turns it into one clean, reliable,
+well-documented dataset that AI systems can safely build on. It's built to run the same way on a
+laptop or in the cloud, on synthetic (non-real) patient data only.
+
 Production-pattern healthcare data lakehouse on [Synthea Coherent](https://registry.opendata.aws/synthea-coherent-data/)
-(1,278 synthetic patients, FHIR R4). **Medallion** architecture — Bronze → Silver → Gold —
-implemented as **two independent, engine-native tiers** that emit the same Gold contract: a
-LocalLite tier (`core/` — Polars + delta-rs, runs on a laptop) and a Fabric tier (`fabric/` —
-Spark + OneLake). The Gold corpus (`gold.encounter_summary`) feeds
-[`scribe-iq`](https://sandeep-jay.github.io/scribe-iq/) (clinical RAG),
-`clinical-bert-pipeline` (NLP), and an Ollama dialogue-generation pipeline.
+(1,278 patients → 1,280 FHIR R4 bundles): a **Bronze → Silver → Gold medallion** that turns raw
+multimodal clinical bundles into one governed, **versioned, test-gated** Gold data contract.
+
+**Built twice, on purpose** — **Polars + delta-rs + DuckDB** on a laptop and **Spark + Delta +
+OneLake** on **Microsoft Fabric** — orchestrated as a **Dagster** asset graph with a
+**streaming-ingest simulation** of Fabric's Auto Loader. Two independent, engine-native
+implementations converge on the *same* contract by schema parity and a lockstep version, not
+shared code ([ADR-022](docs/adr/022-platform-independent-implementations.md)).
+
+**Built with:** Polars · Apache Spark · Delta Lake (delta-rs / OneLake) · DuckDB · Dagster ·
+Microsoft Fabric · FHIR R4 · DICOM · AWS Open Data S3 — Python 3.11 · synthetic data, no PHI.
+
+**Why it exists.** `scribe-iq` proved the clinical-documentation product on a corpus assembled
+heuristically (Synthea CSV + public note sets — ACI-Bench, MTSamples, MedSynth). This repo
+industrializes that foundation the rigorous way; next, a **roadmap** Ollama loop will generate
+`scribe-iq`'s next corpus from the Gold contract. Full story in the
+[docs](https://sandeep-jay.github.io/scribe-iq-lakehouse/portfolio/).
 
 **Status:** Bronze → Silver → **Gold** fully built and run end-to-end on the complete
 1,278-patient dataset on the LocalLite tier (143,946 encounter summaries). DICOM imaging
 headers ingested. **Dagster** local orchestration renders the medallion as a software-defined
 asset graph (a third local execution surface alongside the CLI). The **Fabric tier** ran green
-end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,278-bundle
+end-to-end on F4 capacity against a 100-patient sample (notebooks 00–10); the full 1,280-bundle
 re-run is pending. Synthetic data only — **no PHI**.
 
 ```
- AWS Open Data S3            Bronze (raw)              Silver (10 Delta tables)        Gold
- coherent/unzipped/   ──►   fhir/ · dicom/ · csv/  ──► patient · encounter · …    ──►  encounter_summary
- (no credentials)           + manifests               condition · observation …       (1 row / encounter)
-                                                       CDC enabled, validated          + corpus_manifest.json
-                                                                                       └─► scribe-iq · BERT · Ollama
+ AWS Open Data S3      Bronze (raw, append-only)       Silver (10 typed Delta tables)        Gold
+ coherent/  ─►  streaming_sim ─►  fhir· dicom· csv  ─►  Polars + delta-rs (local)         ─►  gold.encounter_summary
+ (no creds)     (Auto Loader sim)  + manifests           / Spark from_json (Fabric)            1 row/encounter · contract v1.1.0
+                                                          CDC · validated (Dagster checks)     └─► clinical-bert · scribe-iq via Ollama (roadmap)
 
-  execution surfaces (same pure transforms): CLI · Dagster (core/orchestration/dagster/) · Fabric notebooks
+  local surfaces share one transform set: CLI · Dagster asset graph (core/orchestration/dagster/)  |  Fabric tier reimplements its own (ADR-022)
 ```
 
 ---

@@ -62,7 +62,7 @@ python -m core.ingest.download --bronze-root data/bronze
 # 3. (Optional) Land DICOM + CSV assets (~10 GB; enables imaging header extraction)
 python -m core.ingest.download --assets-only --with-dicom --with-csv
 
-# 4. Build Bronze → Silver → Gold (~2.5 min Silver + ~6.5 s Gold)
+# 4. Build Bronze → Silver → Gold (~2m19s Silver + ~6.5 s Gold)
 python -m core.surfaces.cli.pipeline --with-gold
 
 # 5. Verify (see §5)

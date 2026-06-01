@@ -49,7 +49,8 @@ real Coherent data forced:
 ## Consequences
 
 **Positive:**
-- Full local pipeline runs with `pip install` only; same transforms target Fabric later.
+- Full local pipeline runs with `pip install` only; the Fabric tier later targets the same
+  *contract* (its own engine-native transforms, per ADR-022).
 - CDC enabled from creation — downstream change-feed consumers work on day one.
 - Flat, portable Silver schemas; Gold can still recover BP via `components_json`.
 

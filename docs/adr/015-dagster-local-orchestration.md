@@ -47,8 +47,11 @@ the persistence pattern are specified separately in [ADR-016](016-dagster-asset-
 - Per-cohort **partitioned materialization + backfill** replaces the `rm -rf` full rebuild:
   each cohort is the incremental MERGE path that actually works (ADR-016).
 - Validation surfaces as first-class **asset checks**; run history/metadata live in the UI.
-- The same pure transforms now demonstrably run under **three orchestrators** (CLI, Dagster,
-  Fabric Data Factory) — the concrete payoff of ADR-002 (platform isolation) and ADR-004 (Arrow).
+- The LocalLite pure transforms run under **two local orchestrators** (CLI, Dagster) with zero
+  duplicated logic — the concrete payoff of platform isolation and the Arrow interchange type.
+  *Amended per [ADR-022](022-platform-independent-implementations.md): the Fabric tier is a separate
+  engine-native implementation, not a third orchestrator over the same transforms; the originally
+  cited ADR-002/004 are superseded by ADR-022.*
 
 **Negative:**
 - New dev dependency (`dagster` + `dagster-webserver`) and a UI process to run.

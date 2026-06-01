@@ -90,13 +90,13 @@ Delta table (overwrite + CDC) plus the corpus manifest.
 Independent engine-native tiers emitting the same Gold contract (ADR-022). LocalLite is measured
 on the full dataset; the Fabric tier ran green on F4 capacity against a 100-patient sample.
 
-| Capability | local_lite | local_spark | Fabric | Databricks | AWS | GCP |
-|------------|-----------|-------------|--------|------------|-----|-----|
-| Bronze→Silver (full) | ✅ 2m30s | — | ✅ F4 (100-sample) | roadmap | roadmap | roadmap |
-| Silver→Gold (full) | ✅ ~6.5s | — | ✅ F4 (100-sample) | roadmap | roadmap | roadmap |
-| CDC | ✅ | — | ✅ | roadmap | roadmap | roadmap |
-| Streaming | sim only | — | 🔜 Auto Loader | roadmap | roadmap | roadmap |
-| Cost (1.3k pts) | $0 | $0 | trial | — | — | — |
+| Capability | local_lite | Fabric | Databricks | AWS |
+|------------|-----------|--------|------------|-----|
+| Bronze→Silver (full) | ✅ 2m19s | ✅ F4 (100-sample) | roadmap | roadmap |
+| Silver→Gold (full) | ✅ ~6.5s | ✅ F4 (100-sample) | roadmap | roadmap |
+| CDC | ✅ | ✅ | roadmap | roadmap |
+| Streaming | sim only | 🔜 Auto Loader | roadmap | roadmap |
+| Cost (1.3k pts) | $0 | trial | — | — |
 
 ## Execution surfaces
 
@@ -147,5 +147,5 @@ python -m core.surfaces.cli.pipeline --gold-only                        # rebuil
 - `local_lite` holds one cohort's records in memory at a time (~1/3 of the data); peak
   RSS stayed well under what a typical dev laptop offers. Full-dataset-in-memory was
   deliberately avoided.
-- Fabric/Spark full-run figures will be filled in after the full 1,278-bundle re-run; the
+- Fabric/Spark full-run figures will be filled in after the full 1,280-bundle re-run; the
   100-patient F4 run is green end-to-end (notebooks 00–10).

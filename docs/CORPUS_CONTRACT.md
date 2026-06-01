@@ -4,9 +4,10 @@
 
 This is the handoff interface between the lakehouse and its downstream AI consumers:
 
-- **Ollama generation pipeline** — grounds synthetic clinical dialogue on each summary.
-- **scribe-iq** (RAG) — replaces the 19-patient dev corpus with this 1,278-patient corpus.
-- **clinical-bert-pipeline** (NLP) — consumes `soap_note_text` + structured labels.
+- **clinical-bert-pipeline** (NLP) — consumes `soap_note_text` + structured labels from the contract.
+- **Ollama generation pipeline** *(roadmap)* — will derive synthetic notes/dialogue from each summary.
+- **scribe-iq** (RAG) *(roadmap loop)* — its next corpus will be that Ollama-generated text, superseding
+  its current heuristic 19-patient dev corpus (which this lakehouse does not yet produce).
 
 One row = one clinical encounter. The machine-readable schema is
 [`schemas/gold_encounter_summary.json`](https://github.com/sandeep-jay/scribe-iq-lakehouse/blob/main/schemas/gold_encounter_summary.json) (JSON

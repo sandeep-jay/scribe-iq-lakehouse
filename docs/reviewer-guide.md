@@ -6,6 +6,11 @@ in-progress.
 
 ## Pick a depth
 
+=== "Not technical?"
+
+    **New to data engineering?** In one line: this turns raw hospital-style data into one clean,
+    trusted dataset for AI — built to run on a laptop and in the cloud, on synthetic data only.
+
 === "90 seconds"
 
     1. Read the [Home](index.md) hero + the **What this shows** evidence table.
@@ -44,11 +49,12 @@ Stated plainly so the evidence isn't oversold.
 | LocalLite tier (`core/`) — Bronze → Silver → Gold | ✅ **Run end-to-end on all 1,278 patients** (143,946 Gold rows, 0 validation failures) |
 | Dagster asset graph (local orchestration) | ✅ Built — cohort partitions, `validate_table` as asset checks, file sensor |
 | Gold corpus contract (v1.1.0) | ✅ Versioned + test-gated (schema/JSON-Schema/docs can't drift) |
-| Fabric tier (`fabric/`) — Spark-native, notebooks 00–10 | ✅ **Green end-to-end on F4 against a 100-patient sample**; full 1,278-bundle re-run pending |
+| Fabric tier (`fabric/`) — Spark-native, notebooks 00–10 | ✅ **Green end-to-end on F4 against a 100-patient sample**; full 1,280-bundle re-run pending |
 | Fabric Data Factory pipeline + Power BI Direct Lake | 🚧 In progress (demo deliverables) |
+| Ollama note/dialogue generation → `scribe-iq` corpus loop | 🗺️ Roadmap (not built) — Gold is the input; the generation pipeline is the next-gen corpus path |
 | ECG waveform processing · Databricks/AWS tiers | 🗺️ Roadmap (scoped, not built) |
 
-The Fabric tier is **proven on real enterprise infrastructure** — the remaining work there is a
+The Fabric tier is **validated end-to-end on real Fabric infrastructure (F4 capacity) at sample scale** — the remaining work there is a
 full-scale re-run, not a design question. Pair it with the LocalLite full-run numbers in
 [Benchmarks](BENCHMARKS.md).
 

@@ -60,9 +60,10 @@ habit is the point — the same code on real PHI would not leak identifiers.
 ## Fabric-trial scope
 
 The Fabric tier ran **green end-to-end on F4 trial capacity against a 100-patient sample**
-(notebooks 00–10); the full 1,278-bundle re-run is pending. Framed honestly: the architecture is
-proven on real enterprise infrastructure — the remaining work is a full-scale re-run, not a
-design question — and it sits alongside a LocalLite tier that *is* validated on the full dataset.
+(notebooks 00–10); the full 1,280-bundle re-run is pending. Framed honestly: the architecture is
+validated end-to-end on real Fabric infrastructure (F4 capacity) at sample scale — the remaining
+work is a full-scale re-run, not a design question — and it sits alongside a LocalLite tier that
+*is* validated on the full dataset.
 
 ## FHIR & multimodal ingestion, in brief
 
